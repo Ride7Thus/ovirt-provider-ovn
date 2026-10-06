@@ -20,6 +20,7 @@
 from __future__ import absolute_import
 
 import random
+import ipaddress
 
 import constants as ovnconst
 
@@ -37,6 +38,9 @@ def get_port_ip(lsp, lrp=None):
         return get_port_router_ip(lrp)
     elif 'dynamic' in lsp.addresses[0]:
         return get_port_dynamic_ip(lsp)
+    elif len(lsp.addresses[0].split()) == 2:
+        if 'dynamic' in lsp.addresses[0].split():
+            return get_port_dynamic_ip(lsp)
     return get_port_static_ip(lsp)
 
 
@@ -107,7 +111,7 @@ def _get_ip_from_addresses(addresses):
 def _is_valid_ip(candidate):
     try:
         IPAddress(candidate)
-    except (AddrFormatError, TypeError):
+    except AddrFormatError:
         return False
     return True
 
@@ -116,16 +120,19 @@ def get_network_exclude_ips(network):
     exclude_values = network.other_config.get(
         ovnconst.LS_OPTION_EXCLUDE_IPS, ''
     )
-    # TODO: should we care about IP ranges? we do not use them, but
-    # what if someone else will?
-    # lets raise for now
+    subnet = network.other_config.get(
+        ovnconst.LS_OPTION_SUBNET_CIDR, ''
+    )
     result = []
+    host_list = [str(ip) for ip in ipaddress.IPv4Network(subnet)]
     for exclude_value in exclude_values.split():
         if ovnconst.LS_EXCLUDED_IP_DELIMITER in exclude_value:
-            raise NotImplementedError(
-                'Handling of ip ranges not yet implemented'
-            )
-        result.append(exclude_value)
+            ip_range = exclude_value.split('..')
+            if (ip_range[0] not in host_list) or (ip_range[1] not in host_list):
+                continue
+            result.extend(host_list[host_list.index(ip_range[0]):(host_list.index(ip_range[1])+1)])
+        elif (exclude_value in host_list) and (exclude_value not in result):
+            result.append(exclude_value)
     return result
 
 

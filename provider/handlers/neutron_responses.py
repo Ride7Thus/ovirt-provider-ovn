@@ -29,6 +29,7 @@ from handlers.responses_utils import get_entity
 from handlers.selecting_handler import rest
 from ovirt_provider_config_common import neutron_url_with_version
 
+
 NETWORK_ID = 'network_id'
 PORT_ID = 'port_id'
 SUBNET_ID = 'subnet_id'
@@ -55,6 +56,8 @@ EXTENSIONS = 'extensions'
 EXTENSION_ENTITY = 'extensions/{alias}'
 
 FLOATINGIPS = 'floatingips'
+FLOATINGIP_ID = 'floatingip_id'
+FLOATINGIP_ENTITY = 'floatingips/{floatingip_id}'
 
 
 _responses = {}
@@ -243,12 +246,6 @@ def put_remove_router_interface(nb_db, content, parameters):
     )
     return Response(result)
 
-
-@rest(GET, FLOATINGIPS, _responses)
-def get_floating_ips(nb_db, content, parameters):
-    return Response({'floatingips': []})
-
-
 @rest(GET, SECURITY_GROUPS, _responses)
 def get_security_groups(nb_db, content, parameters):
     return Response({'security_groups': nb_db.list_security_groups()})
@@ -263,7 +260,6 @@ def show_security_group(nb_db, content, parameters):
             )
         }
     )
-
 
 @rest(POST, SECURITY_GROUPS, _responses)
 def post_security_groups(nb_db, content, parameters):
@@ -321,6 +317,32 @@ def post_security_group_rule(nb_db, content, parameters):
 def delete_security_group_rule(nb_db, content, parameters):
     nb_db.delete_security_group_rule(parameters[SECURITY_GROUP_RULE_ID])
     return Response()
+
+@rest(GET, FLOATINGIPS, _responses)
+def get_floating_ips(nb_db, content, parameters):
+    floatingips = nb_db.list_floatingips()
+    return Response({'floatingips': floatingips})
+
+@rest(POST, FLOATINGIPS, _responses)
+def post_floating_ips(nb_db, content, parameters):
+    received_floatingip = get_entity(content, 'floatingip')
+    floatingip =nb_db.add_floatingip(received_floatingip)
+    return Response({'floatingip': floatingip})
+
+@rest(DELETE, FLOATINGIP_ENTITY, _responses)
+def delete_floatingip(nb_db, content, parameters):
+    nb_db.delete_floatingip(parameters[FLOATINGIP_ID])
+    return Response()
+
+@rest(GET, FLOATINGIP_ENTITY, _responses)
+def show_floatingip(nb_db, content, parameters):
+    return Response({'floatingip': nb_db.get_floatingip(parameters[FLOATINGIP_ID])})
+
+@rest(PUT, FLOATINGIP_ENTITY, _responses)
+def put_floatingip(nb_db, content, parameters):
+    received_floatingip = get_entity(content, 'floatingip')
+    floatingip = nb_db.update_floatingip(received_floatingip, parameters[FLOATINGIP_ID])
+    return Response({'floatingip': floatingip})
 
 
 def responses():
