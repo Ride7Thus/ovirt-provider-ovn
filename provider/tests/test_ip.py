@@ -132,3 +132,26 @@ def test_diff_routes_ipv6():
     assert len(deleted) == 1
     assert rest_routes[0]['destination'] in added
     assert db_routes[0].ip_prefix in deleted
+
+
+Network = namedtuple('Network', ['ports', 'other_config'])
+
+
+def test_exclude_ranges_without_subnet():
+    network = Network(
+        ports=[],
+        other_config={'exclude_ips': '10.0.0.1 10.0.0.5..10.0.0.7 junk'},
+    )
+    assert ip_utils.is_ip_excluded(network, '10.0.0.1')
+    assert ip_utils.is_ip_excluded(network, '10.0.0.6')
+    assert not ip_utils.is_ip_excluded(network, '10.0.0.8')
+
+
+def test_is_ip_available_in_network():
+    network = Network(
+        ports=[Lsp(['80:fa:5b:06:72:b7 10.0.0.4'], [])],
+        other_config={'exclude_ips': '10.0.0.10..10.0.0.20'},
+    )
+    assert not ip_utils.is_ip_available_in_network(network, '10.0.0.4')
+    assert not ip_utils.is_ip_available_in_network(network, '10.0.0.15')
+    assert ip_utils.is_ip_available_in_network(network, '10.0.0.5')

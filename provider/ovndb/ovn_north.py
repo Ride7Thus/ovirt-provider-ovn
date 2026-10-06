@@ -563,7 +563,19 @@ class OvnNorth(object):
             None,
         )
 
-    # NAT
+    # Floating IPs / NAT
+
+    @optionally_use_transactions
+    def add_floatingip(
+        self, port_id, network_id, addresses, external_ids, transaction=None
+    ):
+        return self.idl.lsp_add(
+            network_id,
+            port_id,
+            may_exist=False,
+            addresses=addresses,
+            external_ids=dict(external_ids),
+        )
 
     @optionally_use_transactions
     def add_nat(

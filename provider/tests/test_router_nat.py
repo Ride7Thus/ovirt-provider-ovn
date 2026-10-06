@@ -23,7 +23,11 @@ from unittest import mock
 import pytest
 
 import constants as ovnconst
+from handlers.base_handler import BadRequestError
+from handlers.base_handler import ConflictError
 from neutron.neutron_api import NeutronApi
+from neutron.neutron_api_mappers import FloatingipMapper
+from neutron.neutron_api_mappers import PortMapper
 from neutron.neutron_api_mappers import RestDataError
 from neutron.neutron_api_mappers import RouterMapper
 
@@ -180,3 +184,103 @@ class TestGatewayChassis(object):
         )
         api.ovn_north.lrp_has_gateway_chassis.return_value = False
         assert not api._ensure_gateway_chassis(GW_LRP.name)
+
+
+class TestRouterDependencies(object):
+    def _fip(self, port_id='vm-port'):
+        return Lsp(
+            'fip-uuid',
+            'fip-1',
+            {
+                FloatingipMapper.OVN_FLOATINGIP_MARKER: 'true',
+                PortMapper.OVN_NIC_NAME: FloatingipMapper.FLOATINGIP_PREFIX
+                + '1',
+                FloatingipMapper.OVN_FLOATINGIP_ROUTER_ID: ROUTER_ID,
+                FloatingipMapper.OVN_FLOATINGIP_PORT_ID: port_id,
+            },
+        )
+
+    def test_delete_router_with_floatingips_refused(self):
+        api = make_api()
+        setup_router(api, make_lr([GW_LRP]))
+        api.ovn_north.list_ls.return_value = [Ls('ext', [self._fip()])]
+        with pytest.raises(ConflictError):
+            api.delete_router(ROUTER_ID)
+        api.ovn_north.remove_lrp.assert_not_called()
+        api.ovn_north.remove_router.assert_not_called()
+
+    def test_delete_router_with_interfaces_keeps_gateway(self):
+        api = make_api()
+        setup_router(api, make_lr([GW_LRP, INT_LRP]))
+        with pytest.raises(ConflictError):
+            api.delete_router(ROUTER_ID)
+        api.ovn_north.remove_lrp.assert_not_called()
+        api.ovn_north.remove_router.assert_not_called()
+
+    def test_interface_used_by_floatingip_refused(self):
+        api = make_api()
+        setup_router(api, make_lr([GW_LRP, INT_LRP]))
+        interface = Lsp('int-lsp', 'int-lsp', {})
+        vm_port = Lsp('vm-port', 'vm-port', {})
+        internal = Ls('internal', [interface, vm_port])
+        api.ovn_north.list_ls.return_value = [
+            internal,
+            Ls('ext', [self._fip()]),
+        ]
+        api.ovn_north.get_lsp.return_value = vm_port
+        with pytest.raises(ConflictError):
+            api._validate_interface_not_used_by_floatingips(
+                ROUTER_ID, interface
+            )
+
+    def test_gateway_used_by_floatingip_refused(self):
+        api = make_api()
+        setup_router(api, make_lr([GW_LRP]))
+        api.ovn_north.list_ls.return_value = [Ls('ext', [self._fip()])]
+        with pytest.raises(ConflictError):
+            api._validate_interface_not_used_by_floatingips(
+                ROUTER_ID, Lsp(GW_LSP_ID, GW_LSP_ID, {})
+            )
+
+    def test_other_interface_allowed(self):
+        api = make_api()
+        setup_router(api, make_lr([GW_LRP, INT_LRP]))
+        interface = Lsp('other-lsp', 'other-lsp', {})
+        vm_port = Lsp('vm-port', 'vm-port', {})
+        api.ovn_north.list_ls.return_value = [
+            Ls('other', [interface]),
+            Ls('internal', [vm_port]),
+            Ls('ext', [self._fip()]),
+        ]
+        api.ovn_north.get_lsp.return_value = vm_port
+        api._validate_interface_not_used_by_floatingips(ROUTER_ID, interface)
+
+
+@mock.patch('neutron.neutron_api.gateway_chassis', return_value=[])
+def test_floatingip_needs_gateway_chassis(mock_chassis):
+    api = make_api()
+    vm_port = mock.Mock(
+        uuid='vm-port',
+        type='',
+        addresses=['00:00:00:00:00:02 10.0.0.2'],
+        dynamic_addresses=[],
+        external_ids={PortMapper.OVN_NIC_NAME: 'vm'},
+        dhcpv4_options=[],
+        dhcpv6_options=[],
+    )
+    vm_port.name = 'vm-port'
+    gw_port = mock.Mock(uuid=GW_LSP_ID, external_ids={})
+    gw_port.name = GW_LSP_ID
+    ports = {'vm-port': vm_port, GW_LSP_ID: gw_port}
+    api.ovn_north.get_lsp.side_effect = lambda lsp_id: ports[lsp_id]
+    api.ovn_north.list_ls.return_value = [
+        Ls('internal', [vm_port]),
+        Ls('ext', [gw_port]),
+    ]
+    api.ovn_north.get_dhcp.return_value = mock.Mock(
+        external_ids={'gateway_router': ROUTER_ID}
+    )
+    setup_router(api, make_lr([GW_LRP]))
+    api.ovn_north.get_lrp.return_value = GW_LRP._replace(gateway_chassis=[])
+    with pytest.raises(BadRequestError):
+        api._get_floatingip_target('ext', 'vm-port')
