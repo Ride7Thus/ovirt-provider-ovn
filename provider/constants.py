@@ -23,6 +23,7 @@ ROW_LS_NAME = 'name'
 ROW_LS_OTHER_CONFIG = 'other_config'
 ROW_LS_EXTERNAL_IDS = 'external_ids'
 LS_OPTION_EXCLUDE_IPS = 'exclude_ips'
+LS_OPTION_SUBNET_CIDR = 'subnet'
 LS_EXCLUDED_IP_DELIMITER = '..'
 
 TABLE_LSP = 'Logical_Switch_Port'
@@ -66,7 +67,8 @@ LOCALNET_SWITCH_PORT_NAME = 'localnet_port'
 ROUTER_SWITCH_PORT_NAME = 'router_port'
 UNASSIGNED_SWTICH_PORT_NAME = 'unassgined_port'
 
-ROUTER_PORT_NAME_PREFIX = 'lrp'
+ROUTER_PORT_NAME_PREFIX = 'lrp-'
+SECURITY_GROUP_NAME_PREFIX = "ovirt"
 
 TABLE_ROUTES = 'Logical_Router_Static_Route'
 ROW_ROUTES_IP_PREFIX = 'ip_prefix'
@@ -86,3 +88,10 @@ TABLE_ADDRESS_SET = 'Address_Set'
 # Extensions
 EXTENSION_UPDATED = '2022-02-28T00:00:00-00:00'
 SUPPORTED_EXTENSIONS = [('Neutron Extra Route', 'extraroute')]
+
+NAT_SNAT = 'snat'
+NAT_DNAT = 'dnat'
+NAT_BOTH = 'dnat_and_snat'
+NAT_TYPES = (NAT_SNAT, NAT_DNAT, NAT_BOTH)
+
+FLOATING_IP_MAX_DESCRIPTION_LEN = 64

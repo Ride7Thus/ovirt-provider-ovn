@@ -100,16 +100,15 @@ def _get_sso_token(username, password, engine_url, ca_file, timeout):
 def get_profiles(
     token, engine_url, ca_file, timeout, client_id, client_secret
 ):
-    profiles = _profile_list(
-        token,
-        engine_url,
-        ca_file=ca_file,
-        timeout=timeout,
-        client_id=client_id,
-        client_secret=client_secret,
-    )['result'][1][0]
     # first element of container is corresponding data type in java
-    profiles.pop(0)
+    profiles = [result[1] for result in _profile_list(
+       	token,
+       	engine_url,
+       	ca_file=ca_file,
+        timeout=timeout,
+       	client_id=client_id,
+        client_secret=client_secret,
+    )['result'][1]]
     return profiles
 
 

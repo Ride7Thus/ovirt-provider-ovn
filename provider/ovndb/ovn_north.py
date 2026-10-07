@@ -290,10 +290,8 @@ class OvnNorth(object):
             )
         except RowNotFound:
             raise ElementNotFoundError(
-                'Security Group {sec_group_id} does not exist'.format(
-                    sec_group_id=security_group_id
+                f'Security Group {security_group_id} does not exist'
                 )
-            )
 
     def add_security_group(
         self, name, project_id, tenant_id, description, transaction
@@ -303,7 +301,7 @@ class OvnNorth(object):
                 name, project_id, tenant_id, description
             )
         )
-        egress_rules = self.activate_egress_rules(security_group, transaction)
+        egress_rules = self.activate_default_rules(security_group, transaction)
         return security_group, egress_rules
 
     def remove_security_group(self, security_group_id):
@@ -490,13 +488,13 @@ class OvnNorth(object):
             self._ovn_sec_group_api.create_security_group(sec_group_name)
         )
 
-    def activate_egress_rules(self, port_group, transaction):
-        return [
-            transaction.add(acl)
-            for acl in self._ovn_sec_group_api.create_allow_all_egress_acls(
-                port_group
-            )
-        ]
+    def activate_default_rules(self, port_group, transaction):
+            return [
+                transaction.add(acl)
+                for acl in self._ovn_sec_group_api.create_allow_all_egress_acls(
+                    port_group
+                )
+            ]
 
     def list_port_security_groups(self, port_uuid):
         return list(
@@ -553,3 +551,61 @@ class OvnNorth(object):
             ),
             None,
         )
+
+#==================================FLOATING_IP=========================
+    @optionally_use_transactions
+    def add_floatingip(self, port_id, name, network_id, transaction=None, external_ids = {}):
+        external_ids.update({PortMapper.OVN_NIC_NAME: name})
+        return self.idl.lsp_add(
+            network_id,
+            port_id,
+            may_exist=False,
+            external_ids= external_ids
+        )
+
+    @optionally_use_transactions
+    def add_nat(self, lr_id, nat_type, external_ip, fixed_ip_address, lsp_id, transaction=None):
+        """Add a NAT to 'router'
+         :param fixed_ip_adress: Pair of (ip_address, mac_address)
+        """
+        if isinstance(fixed_ip_address, str):
+            logical_ip = fixed_ip_address
+            external_mac = None
+        elif isinstance(fixed_ip_address, tuple):
+            external_mac = fixed_ip_address[0]
+            logical_ip = fixed_ip_address[1]
+        else:
+            raise BadRequestError("fixed_ip_adress don't contains (mac ip_address) pair or string")
+        return self.idl.lr_nat_add(
+            router = lr_id,
+            nat_type = nat_type,
+            external_ip = external_ip,
+            logical_port = lsp_id,
+            logical_ip = logical_ip,
+            external_mac = external_mac,
+            may_exist=False,
+        )
+
+    @optionally_use_transactions
+    def remove_nat(self, lr_id, nat_type, external_ip, fixed_ip_adress, transaction=None):
+        """Remove NATs from 'router'
+        :param fixed_ip_adress: Pair of (ip_address, mac_address)
+        """
+        if nat_type == ovnconst.NAT_BOTH or nat_type == ovnconst.NAT_DNAT:
+            match_ip = external_ip
+        elif isinstance(fixed_ip_adress, str):
+            match_ip = fixed_ip_adress
+        elif isinstance(fixed_ip_adress, tuple):
+            match_ip = fixed_ip_adress[1]
+        else:
+            raise BadRequestError("fixed_ip_adress don't contains (mac ip_address) pair or string")
+        return self.idl.lr_nat_del(
+            router = lr_id,
+            nat_type = nat_type,
+            match_ip = match_ip,
+            if_exists = True
+        )
+    
+    def list_nat(self, lr_id):
+        """Get the NATs on 'router"""
+        return self.idl.lr_nat_list(lr_id)

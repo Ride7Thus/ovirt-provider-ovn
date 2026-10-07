@@ -25,7 +25,7 @@ from functools import wraps
 from netaddr import AddrFormatError
 from netaddr import EUI
 from netaddr import IPNetwork
-from netaddr import __version__ as netaddr_version
+import six
 
 import constants as ovnconst
 import neutron.constants as neutron_constants
@@ -36,6 +36,7 @@ from ovirt_provider_config_common import tenant_id
 from ovirt_provider_config_common import max_allowed_mtu
 from handlers.base_handler import MethodNotAllowedError
 from handlers.base_handler import BadRequestError
+
 
 NetworkPort = namedtuple('NetworkPort', ['lsp', 'ls', 'dhcp_options', 'lrp'])
 Network = namedtuple('Network', ['ls', 'localnet_lsp'])
@@ -51,8 +52,6 @@ SecurityGroup = namedtuple('SecurityGroup', ['sec_group', 'sec_group_rules'])
 OVN_PREFIX = 'ovirt_'
 OVN_PREFIX_LENGTH = len(OVN_PREFIX)
 UUID_LENGTH = 36
-
-netaddr_major_version = int(netaddr_version.split('.')[0])
 
 
 class SecurityGroupRule(object):
@@ -93,7 +92,8 @@ class SecurityGroupRule(object):
         return SecurityGroupRule.default_group_id
 
 
-class Mapper(object, metaclass=abc.ABCMeta):
+@six.add_metaclass(abc.ABCMeta)
+class Mapper(object):
 
     REST_TENANT_ID = 'tenant_id'
     REST_PROJECT_ID = 'project_id'
@@ -277,13 +277,13 @@ class NetworkMapper(Mapper):
             result[NetworkMapper.REST_PROVIDER_SEGMENTATION_ID] = int(
                 ovn_vlan[0]
             )
-            result[NetworkMapper.REST_PROVIDER_NETWORK_TYPE] = (
-                NetworkMapper.NETWORK_TYPE_VLAN
-            )
+            result[
+                NetworkMapper.REST_PROVIDER_NETWORK_TYPE
+            ] = NetworkMapper.NETWORK_TYPE_VLAN
         else:
-            result[NetworkMapper.REST_PROVIDER_NETWORK_TYPE] = (
-                NetworkMapper.NETWORK_TYPE_FLAT
-            )
+            result[
+                NetworkMapper.REST_PROVIDER_NETWORK_TYPE
+            ] = NetworkMapper.NETWORK_TYPE_FLAT
         return result
 
     @staticmethod
@@ -406,6 +406,7 @@ class PortMapper(Mapper):
                 name=name,
                 mac=mac,
                 is_enabled=is_enabled,
+                status = is_enabled,
                 device_id=device_id,
                 device_owner=device_owner,
                 fixed_ips=fixed_ips,
@@ -420,6 +421,7 @@ class PortMapper(Mapper):
                 name=name or '',
                 mac=mac,
                 is_enabled=is_enabled,
+                status = is_enabled,
                 device_id=device_id,
                 device_owner=device_owner,
                 fixed_ips=fixed_ips,
@@ -491,9 +493,9 @@ class PortMapper(Mapper):
             return [
                 {
                     PortMapper.REST_PORT_IP_ADDRESS: ip_address,
-                    PortMapper.REST_PORT_SUBNET_ID: (
-                        str(dhcp_options.uuid) if dhcp_options else None
-                    ),
+                    PortMapper.REST_PORT_SUBNET_ID: str(dhcp_options.uuid)
+                    if dhcp_options
+                    else None,
                 }
             ]
 
@@ -589,8 +591,48 @@ class SubnetMapper(Mapper):
     REST_SUBNET_IP_VERSION = 'ip_version'
     REST_SUBNET_ALLOCATION_POOLS = 'allocation_pools'
     REST_SUBNET_ALLOCATION_POOLS_START = 'start'
-    REST_SUBNET_ALLOCATION_POOLS_STOP = 'stop'
+    REST_SUBNET_ALLOCATION_POOLS_STOP = 'end'
     REST_SUBNET_IPV6_ADDRESS_MODE = 'ipv6_address_mode'
+    REST_SUBNET_TAGS = "tags"
+    REST_SUBNET_SERVICE_TYPES = "service_types"
+    REST_SUBNET_HOST_ROUTES = "host_routes"
+
+    '''
+    {
+    "subnet": {
+        "name": "my_subnet",                                      # REST_SUBNET_NAME
+        "enable_dhcp": true,                                      # REST_SUBNET_ENABLE_DHCP
+        "network_id": "d32019d3-bc6e-4319-9c1d-6722fc136a22",     # REST_SUBNET_NETWORK_ID
+        "segment_id": null,                                       # ?
+        "project_id": "4fd44f30292945e481c7b8a0c8908869",         # REST_PROJECT_ID
+        "tenant_id": "4fd44f30292945e481c7b8a0c8908869",          # REST_TENANT_ID
+        "created_at": "2016-03-08T20:19:41",                      # ?
+        "dns_nameservers": [],                                    # REST_SUBNET_DNS_NAMESERVERS
+        "dns_publish_fixed_ip": false,                            # ?
+        "allocation_pools": [                                     # REST_SUBNET_ALLOCATION_POOLS
+            {
+                "start": "192.0.0.2",                             # REST_SUBNET_ALLOCATION_POOLS_START
+                "end": "192.255.255.254"                          # REST_SUBNET_ALLOCATION_POOLS_STOP
+            }
+        ],
+        "host_routes": [],                                        # REST_SUBNET_HOST_ROUTES
+        "ip_version": 4,                                          # REST_SUBNET_IP_VERSION
+        "gateway_ip": "192.0.0.1",                                # REST_SUBNET_GATEWAY_IP
+        "cidr": "192.0.0.0/8",                                    # REST_SUBNET_CIDR
+        "updated_at": "2016-03-08T20:19:41",                      # ?
+        "id": "54d6f61d-db07-451c-9ab3-b9609b6b6f0b",             # REST_SUBNET_ID
+        "description": "",                                        # ?
+        "ipv6_address_mode": null,                                # REST_SUBNET_IPV6_ADDRESS_MODE
+        "ipv6_ra_mode": null,                                     # ?
+        "revision_number": 2,                                     # ?
+        "service_types": [],                                      # REST_SUBNET_SERVICE_TYPES
+        "subnetpool_id": null,                                    # ?
+        "tags": ["tag1,tag2"],                                    # REST_SUBNET_TAGS
+        "router:external": false                                  # ?
+    }
+}
+    
+    '''
 
     OVN_NAME = 'ovirt_name'
     OVN_NETWORK_ID = 'ovirt_network_id'
@@ -618,7 +660,9 @@ class SubnetMapper(Mapper):
         OVN_DHCPV6_STATELESS: IPV6_ADDRESS_MODE_STATELESS,
     }
 
-    ovn_ipv6_address_mode = {v: k for k, v in rest_ipv6_address_mode.items()}
+    ovn_ipv6_address_mode = {
+        v: k for k, v in six.iteritems(rest_ipv6_address_mode)
+    }
 
     # allow raw OVN values on OpenStack API for backward compatibility
     ovn_ipv6_address_mode.update(
@@ -644,7 +688,6 @@ class SubnetMapper(Mapper):
         cidr = rest_data.get(SubnetMapper.REST_SUBNET_CIDR)
         network_id = rest_data.get(SubnetMapper.REST_SUBNET_NETWORK_ID)
         dnses = rest_data.get(SubnetMapper.REST_SUBNET_DNS_NAMESERVERS)
-        dns = dnses[0] if dnses else None
         gateway = rest_data.get(SubnetMapper.REST_SUBNET_GATEWAY_IP)
         ip_version = rest_data.get(SubnetMapper.REST_SUBNET_IP_VERSION)
         ipv6_address_mode = SubnetMapper.ovn_ipv6_address_mode.get(
@@ -653,6 +696,14 @@ class SubnetMapper(Mapper):
                 dhcp_ipv6_address_mode() if ip_version == 6 else None,
             )
         )
+
+        if dnses:
+            if len(dnses) > 1:
+                dns = '{' + ','.join(dnses) + '}'
+            else:
+                dns = dnses[0]
+        else:
+            dns = None
 
         if subnet_id:
             return func(
@@ -695,12 +746,21 @@ class SubnetMapper(Mapper):
             SubnetMapper.REST_SUBNET_ALLOCATION_POOLS: [
                 SubnetMapper.get_allocation_pool(row.cidr),
             ],
-            SubnetMapper.REST_SUBNET_DNS_NAMESERVERS: (
-                [options[SubnetMapper.OVN_DNS_SERVER]]
-                if SubnetMapper.OVN_DNS_SERVER in options
-                else []
-            ),
+            SubnetMapper.REST_SUBNET_DNS_NAMESERVERS: [
+                options[SubnetMapper.OVN_DNS_SERVER]
+            ]
+            if SubnetMapper.OVN_DNS_SERVER in options
+            else [],
+            SubnetMapper.REST_SUBNET_TAGS: [],
+            SubnetMapper.REST_SUBNET_SERVICE_TYPES: [],
+            SubnetMapper.REST_SUBNET_HOST_ROUTES: [],
         }
+        if options[SubnetMapper.OVN_DNS_SERVER] != "":
+            if (options[SubnetMapper.OVN_DNS_SERVER].startswith('{') and
+                options[SubnetMapper.OVN_DNS_SERVER].endswith('}')):
+                result[SubnetMapper.REST_SUBNET_DNS_NAMESERVERS] = options[SubnetMapper.OVN_DNS_SERVER].replace(' ','').replace('{','').replace('}','').split(',')
+            else:
+                result[SubnetMapper.REST_SUBNET_DNS_NAMESERVERS] = [options[SubnetMapper.OVN_DNS_SERVER]]
         if SubnetMapper.OVN_NAME in external_ids:
             result[SubnetMapper.REST_SUBNET_NAME] = external_ids[
                 SubnetMapper.OVN_NAME
@@ -714,11 +774,11 @@ class SubnetMapper(Mapper):
                 SubnetMapper.OVN_GATEWAY
             ]
         if SubnetMapper.OVN_IPV6_ADDRESS_MODE in external_ids:
-            result[SubnetMapper.REST_SUBNET_IPV6_ADDRESS_MODE] = (
-                SubnetMapper.rest_ipv6_address_mode[
-                    external_ids[SubnetMapper.OVN_IPV6_ADDRESS_MODE]
-                ]
-            )
+            result[
+                SubnetMapper.REST_SUBNET_IPV6_ADDRESS_MODE
+            ] = SubnetMapper.rest_ipv6_address_mode[
+                external_ids[SubnetMapper.OVN_IPV6_ADDRESS_MODE]
+            ]
 
         return result
 
@@ -899,14 +959,12 @@ class RouterMapper(Mapper):
         result = {
             RouterMapper.REST_ROUTER_ID: str(row.uuid),
             RouterMapper.REST_ROUTER_NAME: row.name,
-            RouterMapper.REST_ROUTER_ADMIN_STATE_UP: (
-                row.enabled[0] if row.enabled else True
-            ),
-            RouterMapper.REST_ROUTER_STATUS: (
-                RouterMapper.ROUTER_STATUS_ACTIVE
-                if row.enabled
-                else RouterMapper.ROUTER_STATUS_INACTIVE
-            ),
+            RouterMapper.REST_ROUTER_ADMIN_STATE_UP: row.enabled[0]
+            if row.enabled
+            else True,
+            RouterMapper.REST_ROUTER_STATUS: RouterMapper.ROUTER_STATUS_ACTIVE
+            if row.enabled
+            else RouterMapper.ROUTER_STATUS_INACTIVE,
             RouterMapper.REST_TENANT_ID: tenant_id(),
             RouterMapper.REST_ROUTER_EXTERNAL_GATEWAY_INFO: RouterMapper._get_external_gateway_from_row(  # noqa: E501
                 router
@@ -1251,11 +1309,13 @@ class SecurityGroupMapper(Mapper):
             group_data.external_ids,
             SecurityGroupMapper.optional_attr_ext_id_mapper,
         )
+        rest_optional_values['created_at'] = rest_optional_values['created_at'] + "Z"
+        rest_optional_values['updated_at'] = rest_optional_values['updated_at'] + "Z"
         result.update(rest_optional_values)
-        result[SecurityGroupMapper.REST_SEC_GROUP_NAME] = (
-            group_data.external_ids.get(
-                SecurityGroupMapper.OVN_SECURITY_GROUP_NAME
-            )
+        result[
+            SecurityGroupMapper.REST_SEC_GROUP_NAME
+        ] = group_data.external_ids.get(
+            SecurityGroupMapper.OVN_SECURITY_GROUP_NAME
         )
 
         return result
@@ -1370,16 +1430,22 @@ class SecurityGroupRuleMapper(Mapper):
             SecurityGroupRuleMapper.REST_SEC_GROUP_RULE_DIRECTION: neutron_constants.OVN_TO_API_DIRECTION_MAPPER[  # noqa: E501
                 rule.direction
             ],
-            SecurityGroupRuleMapper.REST_SEC_GROUP_RULE_SEC_GROUP_ID: (
-                sec_group_id  # noqa: E501
-                if sec_group_id != SecurityGroupMapper.DEFAULT_PG_NAME
-                else default_group_id
-            ),
+            SecurityGroupRuleMapper.REST_SEC_GROUP_RULE_SEC_GROUP_ID: sec_group_id  # noqa: E501
+            if sec_group_id != SecurityGroupMapper.DEFAULT_PG_NAME
+            else default_group_id,
         }
         optional_rest_values = SecurityGroupRuleMapper.set_from_external_ids(
             rule.external_ids,
             SecurityGroupRuleMapper.optional_attr_ext_id_mapper,
         )
+        port_max = optional_rest_values[SecurityGroupRuleMapper.REST_SEC_GROUP_RULE_PORT_RANGE_MAX]
+        optional_rest_values[SecurityGroupRuleMapper.REST_SEC_GROUP_RULE_PORT_RANGE_MAX] = (
+            int(port_max) if port_max is not None else port_max
+            )
+        port_min = optional_rest_values[SecurityGroupRuleMapper.REST_SEC_GROUP_RULE_PORT_RANGE_MIN]
+        optional_rest_values[SecurityGroupRuleMapper.REST_SEC_GROUP_RULE_PORT_RANGE_MIN] = (
+            int(port_min) if port_min is not None else port_min
+            )
         if remote_group:
             optional_rest_values[
                 SecurityGroupRuleMapper.REST_SEC_GROUP_RULE_REMOTE_GROUP
@@ -1408,12 +1474,7 @@ class SecurityGroupRuleMapper(Mapper):
         )
         if prefix:
             try:
-                # pylint: disable=E1123
-                if netaddr_major_version < 1:
-                    addr_or_prefix = IPNetwork(prefix, implicit_prefix=True)
-                else:
-                    addr_or_prefix = IPNetwork(prefix, expand_partial=True)
-                # pylint: enable=E1123
+                addr_or_prefix = IPNetwork(prefix, implicit_prefix=True)
             except AddrFormatError as afe:
                 raise BadRequestError(afe)
 
@@ -1475,3 +1536,153 @@ class SecurityGroupRuleMapper(Mapper):
             protocol,
             remote_group_name,
         )
+
+##==================================FLOATING_IP=========================
+FloatingIP = namedtuple('FloatingIP', ['floatingip', 'floatingip_network', 'floatingip_subnet', 'floatingip_port'])
+class FloatingipMapper(Mapper):
+    # The names of properties received/sent in a REST request
+    REST_FLOATINGIP_ID = 'id'
+    REST_FLOATINGIP_NAME ='id'
+    REST_FLOATINGIP_NETWORK_ID = 'floating_network_id'
+    REST_FLOATINGIP_IP_ADRESS = 'floating_ip_address'
+    REST_FLOATINGIP_FIXED_IP = "fixed_ip_address"
+    REST_FLOATINGIP_SUBNET_ID = 'subnet_id'
+    REST_FLOATINGIP_PORT_ID = "port_id"
+    REST_FLOATINGIP_ROUTER_ID = "router_id"
+    REST_FLOATINGIP_PORT_DETAILS = "port_details"
+    REST_FLOATINGIP_STATUS = "status"
+    REST_FLOATINGIP_PORT_FORWARDINGS = "port_forwardings"
+    REST_FLOATINGIP_DESCRIPTION = 'description'
+    REST_FLOATINGIP_CREATED_AT = 'created_at'
+    REST_FLOATINGIP_UPDATED_AT = 'updated_at'
+
+    OVN_FLOATINGIP_DESCRIPTION = 'ovirt_description'
+    OVN_FLOATINGIP_UPDATE_TS = 'ovirt_updated_at'
+    OVN_FLOATINGIP_CREATE_TS = 'ovirt_created_at'
+    OVN_FLOATINGIP_ROUTER_ID = 'ovirt_gateway_id'
+    OVN_FLOATINGIP_PORT_ID = "ovirt_fip_port_id"
+
+    OVN_FLOATINGIP_PORT = "ovirt_floatingip"
+
+    FLOATINGIP_PREFIX = "fip-"
+    DEVICE_OWNER_FLOATING_IP = "network:floatingip"
+    DEVICE_OWNER_FLOATING_IP_GATEWAY = "network:floatingip_gateway"
+    DEVICE_OWNER_ROUTER = 'network:router_interface'
+    DEVICE_OWNER_ROUTER_GATEWAY = 'network:router_gateway'
+
+    @staticmethod
+    def rest2row(wrapped_self, func, rest_data, floatingip_id):
+        network_id = rest_data.get(FloatingipMapper.REST_FLOATINGIP_NETWORK_ID)
+        #name = rest_data.get(FloatingipMapper.REST_FLOATINGIP_NAME)
+        fixed_ips = rest_data.get(FloatingipMapper.REST_FLOATINGIP_IP_ADRESS)
+        port_id = rest_data.get(FloatingipMapper.REST_FLOATINGIP_PORT_ID)
+        description = rest_data.get(FloatingipMapper.REST_FLOATINGIP_DESCRIPTION)
+        floating_ip_address = rest_data.get(FloatingipMapper.REST_FLOATINGIP_IP_ADRESS)
+
+        if description is not None:
+            if len(description) > ovnconst.FLOATING_IP_MAX_DESCRIPTION_LEN:
+                raise BadRequestError(
+                    f'Description must be len <= {64}'
+                )
+
+        if floatingip_id:
+            return func(
+                wrapped_self,
+                network_id=network_id,
+                fixed_ips=fixed_ips,
+                port_id = port_id,
+                description = description,
+            )
+        else:
+            return func(
+                wrapped_self,
+                network_id=network_id,
+                fixed_ips=fixed_ips,
+                port_id = port_id,
+                description = description,
+                floating_ip_address = floating_ip_address,
+            )
+
+    @staticmethod
+    def row2rest(row):
+        if not row:
+            return {}
+        floatingip, floatingip_network, floatingip_subnet, floatingip_port = row
+        port_details = None
+        floatingip_port_id = None
+        floatingip_fixed_ip_address = None
+        if floatingip_port is not None:
+            keys = [ PortMapper.REST_PORT_NAME,
+                    PortMapper.REST_PORT_ADMIN_STATE_UP,
+                    PortMapper.REST_PORT_NETWORK_ID,
+                    PortMapper.OVN_DEVICE_OWNER,
+                    PortMapper.OVN_DEVICE_ID,
+                    PortMapper.REST_PORT_MAC_ADDRESS
+                    ]
+            port_rest_data = PortMapper.row2rest(floatingip_port)
+            floatingip_port_id = port_rest_data[PortMapper.REST_PORT_ID]
+            if port_rest_data[PortMapper.REST_PORT_FIXED_IPS] is not None:
+                if len(port_rest_data[PortMapper.REST_PORT_FIXED_IPS]) > 0:
+                    floatingip_fixed_ip_address = port_rest_data[PortMapper.REST_PORT_FIXED_IPS][0][PortMapper.REST_PORT_IP_ADDRESS]
+            port_details = dict(filter(
+                lambda pair: pair[0] in keys,
+                port_rest_data.items()
+            ))
+            port_details['status'] = "ACTIVE" if port_rest_data[PortMapper.REST_PORT_ADMIN_STATE_UP] else "DOWN"
+
+        rest_data = {
+            FloatingipMapper.REST_FLOATINGIP_ID: floatingip.name,
+            FloatingipMapper.REST_FLOATINGIP_NETWORK_ID: str(floatingip_network.uuid),
+            FloatingipMapper.REST_TENANT_ID: tenant_id(),
+            FloatingipMapper.REST_FLOATINGIP_IP_ADRESS: FloatingipMapper.get_floating_ip_address(
+                floatingip, None
+            ),
+            FloatingipMapper.REST_FLOATINGIP_FIXED_IP: floatingip_fixed_ip_address,
+            FloatingipMapper.REST_FLOATINGIP_SUBNET_ID: FloatingipMapper.get_subnet_id(floatingip_subnet),
+            FloatingipMapper.REST_FLOATINGIP_PORT_ID: floatingip_port_id,
+            FloatingipMapper.REST_FLOATINGIP_STATUS: port_details['status'] if port_details is not None else None,
+            FloatingipMapper.REST_FLOATINGIP_PORT_DETAILS: port_details if port_details is not None else {},
+            FloatingipMapper.REST_FLOATINGIP_PORT_FORWARDINGS: [],
+        }
+        rest_data.update(FloatingipMapper.set_from_external_ids(
+            floatingip.external_ids,
+            mappings= {
+                FloatingipMapper.REST_FLOATINGIP_ROUTER_ID: FloatingipMapper.OVN_FLOATINGIP_ROUTER_ID,
+                FloatingipMapper.REST_FLOATINGIP_DESCRIPTION: FloatingipMapper.OVN_FLOATINGIP_DESCRIPTION,
+                FloatingipMapper.REST_FLOATINGIP_UPDATED_AT :FloatingipMapper.OVN_FLOATINGIP_UPDATE_TS,
+                FloatingipMapper.REST_FLOATINGIP_CREATED_AT :FloatingipMapper.OVN_FLOATINGIP_CREATE_TS,
+            }
+            )
+        )
+        rest_data['created_at'] = rest_data['created_at'] + "Z"
+        rest_data['updated_at'] = rest_data['updated_at'] + "Z" if rest_data['updated_at'] is not None else rest_data['updated_at']
+        return rest_data
+
+    @staticmethod
+    def get_floating_ip_address(lsp, lrp):
+        return ip_utils.get_port_ip(lsp, lrp)
+
+    @staticmethod
+    def get_subnet_id(dhcp_options):
+        return str(dhcp_options.uuid) if dhcp_options else None
+
+    @staticmethod
+    def validate_add_rest_input(rest_data):
+        if FloatingipMapper.REST_FLOATINGIP_NETWORK_ID not in rest_data:
+            raise NetworkIdRequiredForPortDataError()
+        FloatingipMapper._validate_common(rest_data)
+
+    @staticmethod
+    def validate_update_rest_input(rest_data):
+        FloatingipMapper._validate_common(rest_data)
+
+    @staticmethod
+    def _validate_common(rest_data):
+        fixed_ip = rest_data.get(FloatingipMapper.REST_FLOATINGIP_FIXED_IP)
+        if fixed_ip is not None:
+            raise RestDataError(f'FloatingIP fixed_ip not supported yet')
+
+        floating_ip_address = rest_data.get(FloatingipMapper.REST_FLOATINGIP_IP_ADRESS)
+        if floating_ip_address:
+            if ip_utils.get_ip_version(floating_ip_address) is None:
+                raise RestDataError(f'Invalid IP address: {floating_ip_address}')

@@ -19,15 +19,20 @@
 from __future__ import absolute_import
 
 import uuid
+import ipaddress
+import time
 
+from datetime import datetime
 from functools import wraps
 from netaddr import IPNetwork
 from ovsdbapp.backend.ovs_idl.idlutils import RowNotFound
+
 
 import ovn_connection
 import constants as ovnconst
 import neutron.ip as ip_utils
 import neutron.validation as validate
+
 
 from handlers.base_handler import BadRequestError
 from handlers.base_handler import ElementNotFoundError
@@ -49,6 +54,9 @@ from neutron.neutron_api_mappers import SecurityGroupMapper
 from neutron.neutron_api_mappers import SecurityGroupRuleMapper
 from neutron.neutron_api_mappers import SubnetConfigError
 from neutron.neutron_api_mappers import SubnetMapper
+from neutron.neutron_api_mappers import FloatingipMapper
+from neutron.neutron_api_mappers import FloatingIP
+
 
 from ovirt_provider_config_common import dhcp_lease_time
 from ovirt_provider_config_common import dhcp_server_mac
@@ -56,6 +64,7 @@ from ovirt_provider_config_common import dhcp_enable_mtu
 from ovirt_provider_config_common import dhcp_mtu
 from ovirt_provider_config_common import default_port_security_enabled
 from ovirt_provider_config_common import ovs_version_29
+
 
 from ovndb.ovn_north import OvnNorth
 from ovndb.ovn_north import optionally_use_transactions
@@ -221,9 +230,9 @@ class NeutronApi(object):
         if mtu is not None:
             relevant_external_ids[NetworkMapper.OVN_MTU] = str(mtu)
         if port_security is not None:
-            relevant_external_ids[NetworkMapper.OVN_NETWORK_PORT_SECURITY] = (
-                str(port_security)
-            )
+            relevant_external_ids[
+                NetworkMapper.OVN_NETWORK_PORT_SECURITY
+            ] = str(port_security)
         new_external_ids = self._generate_external_ids(
             current_external_ids, **relevant_external_ids
         )
@@ -285,11 +294,9 @@ class NeutronApi(object):
                     ovnconst.TABLE_DHCP_Options, subnet.uuid
                 )
                 .add(
-                    (
-                        ovnconst.ROW_DHCP_OPTIONS
-                        if ip_utils.is_subnet_ipv4(subnet)
-                        else ovnconst.ROW_DHCP_EXTERNAL_IDS
-                    ),
+                    ovnconst.ROW_DHCP_OPTIONS
+                    if ip_utils.is_subnet_ipv4(subnet)
+                    else ovnconst.ROW_DHCP_EXTERNAL_IDS,
                     {SubnetMapper.OVN_DHCP_MTU: str(mtu)},
                 )
                 .build_command()
@@ -406,6 +413,7 @@ class NeutronApi(object):
         binding_host=None,
         port_security=None,
         security_groups=None,
+        status=None,
     ):
         with self.tx_manager.transaction() as tx:
             port_id = self._create_port(name, network_id, transaction=tx)
@@ -467,35 +475,41 @@ class NeutronApi(object):
         binding_host=None,
         port_security=None,
         security_groups=None,
+        status=None
     ):
+        args = locals()
         port = self.ovn_north.get_lsp(ovirt_lsp_id=port_id)
         network_id = self._get_validated_port_network_id(port, network_id)
         mac = mac or ip_utils.get_port_mac(port)
         with self.tx_manager.transaction() as tx:
-            self._update_port_values(
-                port.uuid,
-                name,
-                is_enabled,
-                device_id,
-                device_owner,
-                binding_host,
-                transaction=tx,
-            )
-            tx.add(
-                self.get_update_port_addr_command(
-                    port.name,
-                    network_id=network_id,
-                    mac=mac,
-                    fixed_ips=fixed_ips,
-                    port_type=port.type,
-                ).build_command()
-            )
-            self.update_port_security(
-                tx, port.name, mac, port_security, lsp=port
-            )
-            self._update_port_security_groups(
-                port, security_groups, tx, port_security=port_security
-            )
+            if any(args[arg] is not None for arg in ["name", "is_enabled", "device_id", "device_owner", "binding_host" ]):
+                self._update_port_values(
+                    port.uuid,
+                    name,
+                    is_enabled,
+                    device_id,
+                    device_owner,
+                    binding_host,
+                    transaction=tx,
+                )
+            if any(args[arg] is not None for arg in ["name", "network_id", "fixed_ips" ]) or mac != ip_utils.get_port_mac(port):
+                tx.add(
+                    self.get_update_port_addr_command(
+                        port.name,
+                        network_id=network_id,
+                        mac=mac,
+                        fixed_ips=fixed_ips,
+                        port_type=port.type,
+                    ).build_command()
+                )
+            if port_security is not None:
+                self.update_port_security(
+                    tx, port.name, mac, port_security, lsp=port
+                )
+            if security_groups is not None:
+                self._update_port_security_groups(
+                    port, security_groups, tx, port_security=port_security
+                )
         return self.get_port(port_id)
 
     def _update_lsp_bound_lrp(self, port_id, fixed_ips):
@@ -862,9 +876,9 @@ class NeutronApi(object):
         if name:
             external_ids[SubnetMapper.OVN_NAME] = name
         if ipv6_address_mode:
-            external_ids[SubnetMapper.OVN_IPV6_ADDRESS_MODE] = (
-                ipv6_address_mode
-            )
+            external_ids[
+                SubnetMapper.OVN_IPV6_ADDRESS_MODE
+            ] = ipv6_address_mode
             external_ids[SubnetMapper.OVN_DHCP_MTU] = mtu
         if ip_version == SubnetMapper.IP_VERSION_6 and gateway:
             external_ids[SubnetMapper.OVN_GATEWAY] = gateway
@@ -1573,18 +1587,42 @@ class NeutronApi(object):
             )
         return security_groups
 
+    def _get_security_group_by_name(self, sec_group_name, default_group_id=None):
+        if not self.are_security_groups_supported():
+            return None
+        for group_data in self.ovn_north.list_security_groups():
+            if sec_group_name == group_data.external_ids.get(
+                SecurityGroupMapper.OVN_SECURITY_GROUP_NAME):
+                security_group_rules = self._process_acls(
+                    default_group_id,
+                    group_data,
+                    self.ovn_north.list_security_group_rules(group_data),
+                    )
+                return SecurityGroup(sec_group=group_data, sec_group_rules=security_group_rules)
+        return None
+
     @SecurityGroupMapper.map_to_rest
     @wrap_default_group_id
     @assure_security_groups_support
     def get_security_group(self, sec_group_id, default_group_id=None):
-        security_group = self.ovn_north.get_security_group(sec_group_id)
-        all_rules = self.ovn_north.list_security_group_rules(security_group)
-        security_group_rules = self._process_acls(
-            default_group_id, security_group, all_rules
-        )
-        return SecurityGroup(
-            sec_group=security_group, sec_group_rules=security_group_rules
-        )
+        if (validate.is_valid_uuid(sec_group_id) or
+            sec_group_id.startswith(ovnconst.SECURITY_GROUP_NAME_PREFIX)):
+            security_group = self.ovn_north.get_security_group(sec_group_id)
+            all_rules = self.ovn_north.list_security_group_rules(security_group)
+            security_group_rules = self._process_acls(
+                default_group_id, security_group, all_rules
+            )
+            return SecurityGroup(
+                sec_group=security_group, sec_group_rules=security_group_rules
+            )
+        else:
+            security_group = self._get_security_group_by_name(sec_group_id)
+            if security_group is not None:
+                return security_group
+            else:
+                raise ElementNotFoundError(
+                     f'Security Group {sec_group_id} does not exist'
+                    )
 
     def _process_acls(self, default_group_id, security_group, acls):
         return [
@@ -1620,7 +1658,11 @@ class NeutronApi(object):
     ):
         with self.tx_manager.transaction() as tx:
             group_data, egress_rules = self.ovn_north.add_security_group(
-                name, project_id, tenant_id, description, transaction=tx
+                name,
+                project_id,
+                tenant_id,
+                description,
+                transaction=tx
             )
         return self.get_security_group(group_data.name)
 
@@ -1755,3 +1797,367 @@ class NeutronApi(object):
         raise ElementNotFoundError(
             f'Cannot find extension with alias "{ext_alias}"'
         )
+
+#==================================FLOATING_IP=========================
+    def _get_port_logical_router(self, lr_port_id):
+        lrp = self.ovn_north.get_lrp(lrp_name=lr_port_id)
+        lrs= self.ovn_north.list_lr()
+        return next(lr for lr in lrs if lrp in lr.ports)
+
+    def _get_floatingip(self, lsp):
+        floatingip_port = None
+        if FloatingipMapper.OVN_FLOATINGIP_PORT_ID in lsp.external_ids:
+            floatingip_port_lsp = self.ovn_north.get_lsp(
+                ovirt_lsp_id=lsp.external_ids[FloatingipMapper.OVN_FLOATINGIP_PORT_ID]
+            )
+            floatingip_port = self._get_network_port(floatingip_port_lsp)
+        ls = self._get_port_network(lsp)
+        dhcp_options = self._get_dhcp(lsp, ls)
+        return FloatingIP(floatingip=lsp, floatingip_network=ls, floatingip_subnet=dhcp_options, floatingip_port = floatingip_port)
+
+    def _check_ip_address_owned_network(self, ip_address, network_id):
+        if ip_address is None:
+            return
+        network = self.ovn_north.get_ls(ls_id=network_id)
+        ip_subnet = network.other_config.get(NetworkMapper.OVN_SUBNET)
+        if not ip_utils.ip_in_cidr(ip_address, ip_subnet):
+            raise BadRequestError(f"{ip_address} not in {ip_subnet}")
+        ports_with_ip = filter(
+            lambda address: (
+                address is not None and
+                ip_utils.ip_in_cidr(address, ip_subnet)
+                ),
+            (ip_utils.get_port_ip(port) for port in network.ports)
+        )
+        if ip_address in ports_with_ip:
+            raise BadRequestError(f"{ip_address} allready using in {network.name}")
+
+    def get_update_floatingip_port_addr_command(
+        self, port_id, network_id, mac=None, fixed_ips=None
+    ):
+        self._check_ip_address_owned_network(ip_address= fixed_ips, network_id= network_id)
+        subnet = self.ovn_north.get_dhcp(ls_id=network_id)
+        db_set_command = self.ovn_north.create_ovn_update_command(
+            ovnconst.TABLE_LSP, port_id
+        )
+        ip_version = int(
+            subnet.external_ids.get(
+                SubnetMapper.OVN_IP_VERSION, SubnetMapper.IP_VERSION_4
+            )
+            if subnet
+            else SubnetMapper.IP_VERSION_4
+        )
+        if mac:
+            if subnet:
+                self.update_port_subnet(db_set_command, subnet, ip_version)
+                if fixed_ips is None:
+                    mac += ' ' + ovnconst.LSP_ADDRESS_TYPE_DYNAMIC
+                else:
+                    mac += ' ' + fixed_ips
+            else:
+                db_set_command.add(ovnconst.ROW_LSP_DHCPV4_OPTIONS, [])
+            db_set_command.add(ovnconst.ROW_LSP_ADDRESSES, [mac])
+        return db_set_command
+
+    def _is_floating_ip_port(self, port_row):
+        external_ids = port_row.external_ids
+        if PortMapper.OVN_NIC_NAME in external_ids:
+            return external_ids[PortMapper.OVN_NIC_NAME].startswith(FloatingipMapper.FLOATINGIP_PREFIX)
+        return False
+
+    @FloatingipMapper.map_to_rest
+    def _serialize_floatingip(self, floatingip):
+        return floatingip
+
+    @FloatingipMapper.map_to_rest
+    def list_floatingips(self):
+        return [
+            self._get_floatingip(lsp)
+            for ls in self.ovn_north.list_ls()
+            for lsp in ls.ports
+            if self._is_floating_ip_port(lsp)
+        ]
+
+    def _list_network_routers_ports(self, network_id, search = None):
+        network = self.ovn_north.get_ls(ls_id=network_id)
+        network_ports = (port for port in network.ports if (
+            port.type == ovnconst.LSP_TYPE_ROUTER
+            and PortMapper.OVN_DEVICE_OWNER in port.external_ids
+            and self._is_port_ovirt_controlled(port)
+            and not self._is_floating_ip_port(port)))
+        lsp_routers_ports = list(
+            filter(lambda lsp: lsp.external_ids[PortMapper.OVN_DEVICE_OWNER] == PortMapper.DEVICE_OWNER_ROUTER_GATEWAY,
+                   network_ports)
+            )
+        return lsp_routers_ports if search is None else list(filter(search,lsp_routers_ports))
+
+
+    def _create_floatingip(self, network_id, description = "", transaction=None):
+        generated_id = str(uuid.uuid4())
+        self.ovn_north.add_floatingip(
+            port_id = generated_id,
+            name = f"{FloatingipMapper.FLOATINGIP_PREFIX}{generated_id}",
+            network_id = network_id,
+            external_ids = {
+                FloatingipMapper.OVN_FLOATINGIP_DESCRIPTION: description,
+                FloatingipMapper.OVN_FLOATINGIP_CREATE_TS: datetime.utcnow().isoformat(),
+                FloatingipMapper.OVN_FLOATINGIP_UPDATE_TS: datetime.utcnow().isoformat()
+            },
+            transaction=transaction
+        )
+        return generated_id
+
+    def _wait_floatingip_ip_assigned(self, lsp_id, timeout = 0):
+        lsp = self.ovn_north.get_lsp(ovirt_lsp_id = lsp_id)
+        if len(lsp.addresses) == 0:
+            raise BadRequestError(f"Port {lsp_id} don't have address configuration")
+        elif lsp.dhcpv4_options is None:
+            raise BadRequestError(f"Port {lsp_id} don't have dynamic address configuration")
+
+        ip = ip_utils.get_port_ip(lsp)
+        while (timeout >= 0) and (ip is None):
+            time.sleep(1)
+            timeout=-1
+            lsp = self.ovn_north.get_lsp(ovirt_lsp_id = lsp_id)
+            ip = ip_utils.get_port_ip(lsp)
+        if ip is None:
+            raise TimeoutError(f"Port {lsp_id} don't get IP address in timeout {timeout}")
+
+    def _check_network_has_free_ips(self, network_id):
+        network = self.ovn_north.get_ls(ls_id=network_id)
+        ip_subnet = network.other_config.get(NetworkMapper.OVN_SUBNET)
+        ip_subnet_adrreses = [str(ip) for ip in ipaddress.IPv4Network(ip_subnet).hosts()]
+        ports_with_ip = filter(
+            lambda address: (
+                address is not None and
+                ip_utils.ip_in_cidr(address, ip_subnet)
+                ),
+            (ip_utils.get_port_ip(port) for port in network.ports)
+        )
+        if all(
+            address in ports_with_ip for address in ip_subnet_adrreses
+        ):
+            raise BadRequestError(f"Not enought IP addreses in {network_id}")
+
+    @FloatingipMapper.validate_add
+    @FloatingipMapper.map_from_rest
+    @FloatingipMapper.map_to_rest
+    def add_floatingip(
+        self,
+        network_id, #floating_network_id
+        port_id = None,
+        description = None,
+        floating_ip_address = None,
+        **kwargs
+    ):
+        self._check_network_has_free_ips(network_id)
+        with self.tx_manager.transaction() as tx:
+            floatingip_id = self._create_floatingip(
+                network_id,
+                description = description,
+                transaction=tx)
+            mac = ip_utils.random_unique_mac(
+                self.ovn_north.list_lsp(), self.ovn_north.list_lrp()
+            )
+            tx.add(
+                self.get_update_floatingip_port_addr_command(
+                    floatingip_id,
+                    network_id=network_id,
+                    mac=mac,
+                    fixed_ips=floating_ip_address,
+                ).build_command()
+            )
+        self._wait_floatingip_ip_assigned(lsp_id = floatingip_id)
+        with self.tx_manager.transaction() as tx_update:
+            self._update_floating_ip_port(
+                floatingip_id=floatingip_id,
+                port_id = port_id,
+                transaction = tx_update
+            )
+        return self._get_floatingip(self.ovn_north.get_lsp(ovirt_lsp_id=floatingip_id))
+
+    def delete_floatingip(self, floatingips_id):
+        floatingip = self.ovn_north.get_lsp(lsp_id=floatingips_id)
+        floatingip_ip_address = ip_utils.get_port_ip(floatingip)
+        # floatingip_port_id = None
+        # if FloatingipMapper.OVN_FLOATINGIP_PORT_ID in floatingip.external_ids:
+        #     floatingip_port_id = floatingip.external_ids[FloatingipMapper.OVN_FLOATINGIP_PORT_ID]
+        with self.tx_manager.transaction() as tx:
+            self.ovn_north.remove_lsp(floatingips_id, transaction=tx)
+            if FloatingipMapper.OVN_FLOATINGIP_ROUTER_ID in floatingip.external_ids:
+                self.ovn_north.remove_nat(
+                    lr_id = floatingip.external_ids[FloatingipMapper.OVN_FLOATINGIP_ROUTER_ID],
+                    nat_type = ovnconst.NAT_BOTH,
+                    external_ip = floatingip_ip_address,
+                    fixed_ip_adress = None,
+                    transaction= tx
+                )
+            # if floatingip_port_id is not None:
+            #     tx.add(
+            #         self.idl.db_remove(
+            #             ovnconst.TABLE_LSP,
+            #             floatingip_port_id,
+            #             ovnconst.ROW_LS_EXTERNAL_IDS,
+            #             FloatingipMapper.OVN_FLOATINGIP_PORT,
+            #         )
+            #     )
+
+    @FloatingipMapper.map_to_rest
+    def get_floatingip(self, floatingip_id):
+        return self._get_floatingip(
+            self.ovn_north.get_lsp(ovirt_lsp_id=floatingip_id)
+        )
+
+    @FloatingipMapper.validate_update
+    @FloatingipMapper.map_from_rest
+    @FloatingipMapper.map_to_rest
+    def update_floatingip(
+        self,
+        floatingip_id,
+        **kwargs
+    ):
+        with self.tx_manager.transaction() as tx:
+            self._update_floating_ip_port(
+                floatingip_id=floatingip_id,
+                port_id=kwargs['port_id'] if 'port_id' in kwargs else None,
+                transaction = tx
+                )
+            self._update_floatingip_values(
+                floatingip_id= floatingip_id,
+                description = kwargs[FloatingipMapper.REST_FLOATINGIP_DESCRIPTION] if (
+                    FloatingipMapper.REST_FLOATINGIP_DESCRIPTION in kwargs
+                ) else None,
+                transaction = tx
+            )
+        return self._get_floatingip(self.ovn_north.get_lsp(ovirt_lsp_id=floatingip_id))
+
+    @optionally_use_transactions
+    def _update_floatingip_port_values(
+        self,
+        port_id,
+        floatingip_id = None,
+        transaction = None
+    ):
+        return (
+            self.ovn_north.create_ovn_update_command(ovnconst.TABLE_LSP, port_id)
+            .add(
+                ovnconst.ROW_LSP_EXTERNAL_IDS,
+                {FloatingipMapper.OVN_FLOATINGIP_PORT: floatingip_id},
+                floatingip_id is not None,
+            )
+            .build_command()
+        )
+
+    @optionally_use_transactions
+    def _update_floatingip_values(
+        self,
+        floatingip_id,
+        port_id = None,
+        gateway_id = None,
+        description = None,
+        transaction = None
+    ):
+        return (
+            self.ovn_north.create_ovn_update_command(ovnconst.TABLE_LSP, floatingip_id)
+            .add(
+                ovnconst.ROW_LSP_EXTERNAL_IDS,
+                {FloatingipMapper.OVN_FLOATINGIP_PORT_ID: port_id},
+                port_id is not None,
+            )
+            .add(
+                ovnconst.ROW_LSP_EXTERNAL_IDS,
+                {FloatingipMapper.OVN_FLOATINGIP_UPDATE_TS: datetime.utcnow().isoformat()},
+                True
+            )
+            .add(
+                ovnconst.ROW_LSP_EXTERNAL_IDS,
+                {FloatingipMapper.OVN_FLOATINGIP_ROUTER_ID: gateway_id},
+                gateway_id is not None
+            )
+            .add(
+                ovnconst.ROW_LS_EXTERNAL_IDS,
+                {FloatingipMapper.OVN_FLOATINGIP_DESCRIPTION, description},
+                description is not None
+            )
+            .build_command()
+        )
+
+    def _is_lr_has_ports_in_network(self, lr_id, ls_id):
+        lr = self.ovn_north.get_lr(lr_id = lr_id)
+        ls = self.ovn_north.get_ls(ls_id = ls_id)
+        ls_router_gateway_ports = list(
+            port.options[ovnconst.LSP_OPTION_ROUTER_PORT] for port in ls.ports if (
+            port.type == ovnconst.LSP_TYPE_ROUTER and
+            ovnconst.LSP_OPTION_ROUTER_PORT in port.options
+            ))
+        return any(lrp.name in ls_router_gateway_ports for lrp in lr.ports)
+
+    def _update_floating_ip_port(self, floatingip_id, port_id, transaction):
+        if port_id is not None:
+            #FLOATINGIP
+            floatingip = self.ovn_north.get_lsp(ovirt_lsp_id=floatingip_id)
+            floatingip_network_id = self._get_validated_port_network_id(floatingip, None)
+            floatingip_ip_address = ip_utils.get_port_ip(floatingip)
+
+            #PORT
+            floatingip_port = self.ovn_north.get_lsp(ovirt_lsp_id=port_id)
+            floatingip_port_network = self._get_port_network(floatingip_port)
+            floatingip_port_subnet = self._get_dhcp(floatingip_port,floatingip_port_network)
+            floatingip_port_ip_address = ip_utils.get_port_ip(floatingip_port)
+            floatingip_port_mac_address = ip_utils.get_port_mac(floatingip_port)
+            floatingip_port_gateway_port = self.ovn_north.get_lrp_by_subnet(floatingip_port_subnet)
+            floatingip_gateway_id = None
+            if floatingip_port_gateway_port is None:
+                raise BadRequestError(f"Port {port_id} don't have connected routers")
+            else:
+                lr = self._get_port_logical_router(floatingip_port_gateway_port['name'])
+                if lr is None:
+                    raise Exception(
+                        f"Can't find router by port {floatingip_port_gateway_port.name}")
+                if not self._is_lr_has_ports_in_network(
+                    lr_id = lr.name, 
+                    ls_id = floatingip_network_id):
+                    raise Exception(
+                        f"Port {port_id} router {lr.name} not connected to floating ip network {floatingip_network_id}")
+                floatingip_gateway_id = lr.name
+
+            # if FloatingipMapper.OVN_FLOATINGIP_PORT_ID in floatingip.external_ids:
+            #         transaction.add(
+            #             self.idl.db_remove(
+            #                 ovnconst.TABLE_LSP,
+            #                 floatingip.external_ids[FloatingipMapper.OVN_FLOATINGIP_PORT_ID],
+            #                 ovnconst.ROW_LS_EXTERNAL_IDS,
+            #                 FloatingipMapper.OVN_FLOATINGIP_PORT,
+            #             )
+            #         )
+            if FloatingipMapper.OVN_FLOATINGIP_ROUTER_ID in floatingip.external_ids:
+                self.ovn_north.remove_nat(
+                    lr_id = floatingip.external_ids[FloatingipMapper.OVN_FLOATINGIP_ROUTER_ID],
+                    nat_type = ovnconst.NAT_BOTH,
+                    external_ip = floatingip_ip_address,
+                    fixed_ip_adress = None,
+                    transaction= transaction
+                )
+
+            if floatingip_gateway_id is not None:
+                self.ovn_north.add_nat(
+                    lr_id = floatingip_gateway_id,
+                    nat_type = ovnconst.NAT_BOTH,
+                    external_ip = floatingip_ip_address,
+                    fixed_ip_address = (floatingip_port_mac_address ,
+                                        floatingip_port_ip_address),
+                    lsp_id=port_id,
+                    transaction = transaction
+                )
+
+            self._update_floatingip_port_values(
+                    port_id = port_id,
+                    floatingip_id=floatingip_id,
+                    transaction = transaction
+                )
+            self._update_floatingip_values(
+                    floatingip_id = floatingip_id,
+                    port_id = port_id,
+                    gateway_id = floatingip_gateway_id,
+                    transaction = transaction
+                )

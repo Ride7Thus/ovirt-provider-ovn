@@ -21,6 +21,7 @@ from __future__ import absolute_import
 
 import constants as ovnconst
 import neutron.ip as ip_utils
+from uuid import UUID
 from handlers.base_handler import ConflictError
 from handlers.base_handler import BadRequestError
 from handlers.base_handler import ElementNotFoundError
@@ -294,3 +295,10 @@ def cannot_delete_sec_group_in_use(security_group):
                 sec_group_id=security_group.uuid
             )
         )
+
+def is_valid_uuid(test_uuid, version=4):
+    try:
+        uuid_obj = UUID(test_uuid, version=version)
+    except ValueError:
+        return False
+    return str(uuid_obj) == test_uuid
