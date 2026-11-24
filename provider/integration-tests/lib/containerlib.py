@@ -98,3 +98,18 @@ def reconfigure_interface(container_name, target_namespace, interface_name):
             ),
         ]
         subprocess.call(command)
+
+
+def ovn_nbctl(*args):
+    """Run ovn-nbctl inside the provider container, which hosts the NB DB."""
+    command = [
+        CONTAINER_CLI,
+        'exec',
+        os.environ['PROVIDER_CONTAINER_ID'],
+        'ovn-nbctl',
+    ] + list(args)
+    return (
+        subprocess.check_output(command, stderr=subprocess.STDOUT)
+        .decode()
+        .strip()
+    )
