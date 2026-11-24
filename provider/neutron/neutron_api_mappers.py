@@ -589,8 +589,13 @@ class SubnetMapper(Mapper):
     REST_SUBNET_IP_VERSION = 'ip_version'
     REST_SUBNET_ALLOCATION_POOLS = 'allocation_pools'
     REST_SUBNET_ALLOCATION_POOLS_START = 'start'
-    REST_SUBNET_ALLOCATION_POOLS_STOP = 'stop'
+    REST_SUBNET_ALLOCATION_POOLS_STOP = 'end'
     REST_SUBNET_IPV6_ADDRESS_MODE = 'ipv6_address_mode'
+    REST_SUBNET_TAGS = "tags"
+    REST_SUBNET_SERVICE_TYPES = "service_types"
+    REST_SUBNET_HOST_ROUTES = "host_routes"
+
+    # REST layout: https://docs.openstack.org/api-ref/network/v2/#subnets
 
     OVN_NAME = 'ovirt_name'
     OVN_NETWORK_ID = 'ovirt_network_id'
@@ -644,7 +649,6 @@ class SubnetMapper(Mapper):
         cidr = rest_data.get(SubnetMapper.REST_SUBNET_CIDR)
         network_id = rest_data.get(SubnetMapper.REST_SUBNET_NETWORK_ID)
         dnses = rest_data.get(SubnetMapper.REST_SUBNET_DNS_NAMESERVERS)
-        dns = dnses[0] if dnses else None
         gateway = rest_data.get(SubnetMapper.REST_SUBNET_GATEWAY_IP)
         ip_version = rest_data.get(SubnetMapper.REST_SUBNET_IP_VERSION)
         ipv6_address_mode = SubnetMapper.ovn_ipv6_address_mode.get(
@@ -653,6 +657,14 @@ class SubnetMapper(Mapper):
                 dhcp_ipv6_address_mode() if ip_version == 6 else None,
             )
         )
+
+        if dnses:
+            if len(dnses) > 1:
+                dns = '{' + ','.join(dnses) + '}'
+            else:
+                dns = dnses[0]
+        else:
+            dns = None
 
         if subnet_id:
             return func(
@@ -673,6 +685,19 @@ class SubnetMapper(Mapper):
                 ip_version=ip_version,
                 ipv6_address_mode=ipv6_address_mode,
             )
+
+    @staticmethod
+    def _dns_to_rest(dns_value):
+        """
+        OVN keeps a single dns server as 'ip' and several as '{ip1, ip2}'.
+        """
+        if not dns_value:
+            return []
+        return [
+            dns.strip()
+            for dns in dns_value.strip().strip('{}').split(',')
+            if dns.strip()
+        ]
 
     @staticmethod
     def row2rest(row):
@@ -696,10 +721,13 @@ class SubnetMapper(Mapper):
                 SubnetMapper.get_allocation_pool(row.cidr),
             ],
             SubnetMapper.REST_SUBNET_DNS_NAMESERVERS: (
-                [options[SubnetMapper.OVN_DNS_SERVER]]
-                if SubnetMapper.OVN_DNS_SERVER in options
-                else []
+                SubnetMapper._dns_to_rest(
+                    options.get(SubnetMapper.OVN_DNS_SERVER)
+                )
             ),
+            SubnetMapper.REST_SUBNET_TAGS: [],
+            SubnetMapper.REST_SUBNET_SERVICE_TYPES: [],
+            SubnetMapper.REST_SUBNET_HOST_ROUTES: [],
         }
         if SubnetMapper.OVN_NAME in external_ids:
             result[SubnetMapper.REST_SUBNET_NAME] = external_ids[
