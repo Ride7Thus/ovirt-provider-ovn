@@ -60,7 +60,7 @@ def _http_get(url, token, ca_file, timeout, params=None):
         data = response.json()
 
         if len(data) == 1:
-            return data.values()[0]
+            return list(data.values())[0]
         else:
             return data
     else:
