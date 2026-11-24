@@ -22,6 +22,8 @@ from neutron.api.networks import NetworksApi
 from neutron.api.ports import PortsApi
 from neutron.api.subnets import SubnetsApi
 from neutron.api.routers import RoutersApi
+from neutron.api.router_gateways import RouterGatewaysApi
+from neutron.api.router_interfaces import RouterInterfacesApi
 from neutron.api.security_groups import SecurityGroupsApi
 from neutron.api.floating_ips import FloatingIpsApi
 from neutron.api.extensions import ExtensionsApi
@@ -32,6 +34,8 @@ class NeutronApi(
     PortsApi,
     SubnetsApi,
     RoutersApi,
+    RouterGatewaysApi,
+    RouterInterfacesApi,
     SecurityGroupsApi,
     FloatingIpsApi,
     ExtensionsApi,

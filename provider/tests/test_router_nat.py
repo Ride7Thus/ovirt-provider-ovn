@@ -164,7 +164,8 @@ class TestGatewayChassis(object):
         api.ovn_north.set_lrp_gateway_chassis.assert_not_called()
 
     @mock.patch(
-        'neutron.api.routers.gateway_chassis', return_value=['ch1', 'ch2']
+        'neutron.api.router_gateways.gateway_chassis',
+        return_value=['ch1', 'ch2'],
     )
     def test_configured_chassis_applied(self, mock_chassis):
         api = make_api()
@@ -176,7 +177,7 @@ class TestGatewayChassis(object):
             unbound.name, ['ch1', 'ch2']
         )
 
-    @mock.patch('neutron.api.routers.gateway_chassis', return_value=[])
+    @mock.patch('neutron.api.router_gateways.gateway_chassis', return_value=[])
     def test_no_chassis_configured(self, mock_chassis):
         api = make_api()
         api.ovn_north.get_lrp.return_value = GW_LRP._replace(
@@ -256,7 +257,7 @@ class TestRouterDependencies(object):
         api._validate_interface_not_used_by_floatingips(ROUTER_ID, interface)
 
 
-@mock.patch('neutron.api.routers.gateway_chassis', return_value=[])
+@mock.patch('neutron.api.router_gateways.gateway_chassis', return_value=[])
 def test_floatingip_needs_gateway_chassis(mock_chassis):
     api = make_api()
     vm_port = mock.Mock(

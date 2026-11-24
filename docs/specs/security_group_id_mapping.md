@@ -272,7 +272,7 @@ class SecurityGroupRule(object):
 ```
 
 The rule now holds a reference to the security group that holds it, so
-that in all neutron_api_mappers operations it can substitute the security_group
+that in all neutron.mappers operations it can substitute the security_group
 id with the correct security group ID.
 
 The security groups already had a list of references to
