@@ -290,9 +290,7 @@ class OvnNorth(object):
             )
         except RowNotFound:
             raise ElementNotFoundError(
-                'Security Group {sec_group_id} does not exist'.format(
-                    sec_group_id=security_group_id
-                )
+                f'Security Group {security_group_id} does not exist'
             )
 
     def add_security_group(

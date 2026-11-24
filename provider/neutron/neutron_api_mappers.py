@@ -55,6 +55,13 @@ UUID_LENGTH = 36
 netaddr_major_version = int(netaddr_version.split('.')[0])
 
 
+def to_rest_timestamp(value):
+    """OVN keeps naive UTC timestamps, the REST API expects a 'Z' suffix."""
+    if not value or value.endswith('Z'):
+        return value
+    return value + 'Z'
+
+
 class SecurityGroupRule(object):
     default_group_id = None
 
@@ -1279,6 +1286,13 @@ class SecurityGroupMapper(Mapper):
             group_data.external_ids,
             SecurityGroupMapper.optional_attr_ext_id_mapper,
         )
+        for key in (
+            SecurityGroupMapper.REST_SEC_GROUP_CREATED_AT,
+            SecurityGroupMapper.REST_SEC_GROUP_UPDATED_AT,
+        ):
+            rest_optional_values[key] = to_rest_timestamp(
+                rest_optional_values[key]
+            )
         result.update(rest_optional_values)
         result[SecurityGroupMapper.REST_SEC_GROUP_NAME] = (
             group_data.external_ids.get(
@@ -1408,6 +1422,18 @@ class SecurityGroupRuleMapper(Mapper):
             rule.external_ids,
             SecurityGroupRuleMapper.optional_attr_ext_id_mapper,
         )
+        port_max = optional_rest_values[
+            SecurityGroupRuleMapper.REST_SEC_GROUP_RULE_PORT_RANGE_MAX
+        ]
+        optional_rest_values[
+            SecurityGroupRuleMapper.REST_SEC_GROUP_RULE_PORT_RANGE_MAX
+        ] = (int(port_max) if port_max is not None else port_max)
+        port_min = optional_rest_values[
+            SecurityGroupRuleMapper.REST_SEC_GROUP_RULE_PORT_RANGE_MIN
+        ]
+        optional_rest_values[
+            SecurityGroupRuleMapper.REST_SEC_GROUP_RULE_PORT_RANGE_MIN
+        ] = (int(port_min) if port_min is not None else port_min)
         if remote_group:
             optional_rest_values[
                 SecurityGroupRuleMapper.REST_SEC_GROUP_RULE_REMOTE_GROUP

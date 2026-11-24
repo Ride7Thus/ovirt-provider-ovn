@@ -29,6 +29,7 @@ from neutron.neutron_api_mappers import PortMapper
 from neutron.neutron_api_mappers import SecurityGroupMapper
 from neutron.neutron_api_mappers import SecurityGroupRuleMapper
 from neutron.neutron_api_mappers import SubnetMapper
+from neutron.neutron_api_mappers import to_rest_timestamp
 
 TABLES = [['table0', ['column0', 'column1']]]
 REMOTE = 'address://url'
@@ -267,12 +268,16 @@ def assert_security_group_equal(rest_data, security_group):
             SecurityGroupMapper.OVN_SECURITY_GROUP_DESCRIPTION
         )
     )
-    assert rest_data.get(SecurityGroupMapper.REST_SEC_GROUP_CREATED_AT) == (
+    assert rest_data.get(
+        SecurityGroupMapper.REST_SEC_GROUP_CREATED_AT
+    ) == to_rest_timestamp(
         security_group.sec_group.external_ids.get(
             SecurityGroupMapper.OVN_SECURITY_GROUP_CREATE_TS
         )
     )
-    assert rest_data.get(SecurityGroupMapper.REST_SEC_GROUP_UPDATED_AT) == (
+    assert rest_data.get(
+        SecurityGroupMapper.REST_SEC_GROUP_UPDATED_AT
+    ) == to_rest_timestamp(
         security_group.sec_group.external_ids.get(
             SecurityGroupMapper.OVN_SECURITY_GROUP_UPDATE_TS
         )
@@ -357,16 +362,18 @@ def assert_security_group_rule_equal(rest_data, security_group_rule):
     ) == security_group_rule.external_ids.get(
         SecurityGroupRuleMapper.OVN_SEC_GROUP_RULE_IP_PREFIX
     )
-    assert rest_data.get(
-        SecurityGroupRuleMapper.REST_SEC_GROUP_RULE_PORT_RANGE_MAX
-    ) == security_group_rule.external_ids.get(
+    port_max = security_group_rule.external_ids.get(
         SecurityGroupRuleMapper.OVN_SEC_GROUP_RULE_MAX_PORT
     )
     assert rest_data.get(
-        SecurityGroupRuleMapper.REST_SEC_GROUP_RULE_PORT_RANGE_MIN
-    ) == security_group_rule.external_ids.get(
+        SecurityGroupRuleMapper.REST_SEC_GROUP_RULE_PORT_RANGE_MAX
+    ) == (int(port_max) if port_max is not None else None)
+    port_min = security_group_rule.external_ids.get(
         SecurityGroupRuleMapper.OVN_SEC_GROUP_RULE_MIN_PORT
     )
+    assert rest_data.get(
+        SecurityGroupRuleMapper.REST_SEC_GROUP_RULE_PORT_RANGE_MIN
+    ) == (int(port_min) if port_min is not None else None)
     assert rest_data.get(
         SecurityGroupRuleMapper.REST_SEC_GROUP_RULE_PROTOCOL
     ) == security_group_rule.external_ids.get(
