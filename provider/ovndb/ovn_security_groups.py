@@ -30,7 +30,7 @@ import constants as ovnconst
 from handlers.base_handler import ElementNotFoundError
 
 import neutron.constants as neutron_constants
-from neutron.neutron_api_mappers import SecurityGroupMapper
+from neutron.mappers.security_groups import SecurityGroupMapper
 
 from ovndb.db_set_command import DbSetCommand
 import ovndb.acls as acl_lib

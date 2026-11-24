@@ -26,18 +26,18 @@ from constants import LSP_OPTION_NETWORK_NAME
 from ovirt_provider_config_common import tenant_id
 
 import neutron.constants as neutron_constants
-from neutron.neutron_api_mappers import Network
-from neutron.neutron_api_mappers import NetworkMapper
-from neutron.neutron_api_mappers import NetworkPort
-from neutron.neutron_api_mappers import PortMapper
-from neutron.neutron_api_mappers import SubnetMapper
-from neutron.neutron_api_mappers import RestDataError
-from neutron.neutron_api_mappers import Router
-from neutron.neutron_api_mappers import RouterMapper
-from neutron.neutron_api_mappers import SecurityGroup
-from neutron.neutron_api_mappers import SecurityGroupRule
-from neutron.neutron_api_mappers import SecurityGroupMapper
-from neutron.neutron_api_mappers import SecurityGroupRuleMapper
+from neutron.mappers.networks import Network
+from neutron.mappers.networks import NetworkMapper
+from neutron.mappers.ports import NetworkPort
+from neutron.mappers.ports import PortMapper
+from neutron.mappers.subnets import SubnetMapper
+from neutron.mappers.base import RestDataError
+from neutron.mappers.routers import Router
+from neutron.mappers.routers import RouterMapper
+from neutron.mappers.security_groups import SecurityGroup
+from neutron.mappers.security_groups import SecurityGroupRule
+from neutron.mappers.security_groups import SecurityGroupMapper
+from neutron.mappers.security_groups import SecurityGroupRuleMapper
 
 
 from ovntestlib import assert_network_equal

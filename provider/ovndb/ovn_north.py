@@ -29,10 +29,10 @@ from handlers.base_handler import ElementNotFoundError
 
 import neutron.validation as validate
 from neutron.ip import get_mask_from_subnet
-from neutron.neutron_api_mappers import PortMapper
-from neutron.neutron_api_mappers import SecurityGroupMapper
-from neutron.neutron_api_mappers import SecurityGroupRuleMapper
-from neutron.neutron_api_mappers import SubnetMapper
+from neutron.mappers.ports import PortMapper
+from neutron.mappers.security_groups import SecurityGroupMapper
+from neutron.mappers.security_groups import SecurityGroupRuleMapper
+from neutron.mappers.subnets import SubnetMapper
 
 from ovndb.db_set_command import DbSetCommand
 from ovndb.ovn_security_groups import OvnSecurityGroupApi

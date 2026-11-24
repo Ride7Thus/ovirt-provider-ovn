@@ -24,12 +24,12 @@ import constants as ovnconst
 import neutron.constants as neutron_constants
 import neutron.ip as ip_utils
 
-from neutron.neutron_api_mappers import NetworkMapper
-from neutron.neutron_api_mappers import PortMapper
-from neutron.neutron_api_mappers import SecurityGroupMapper
-from neutron.neutron_api_mappers import SecurityGroupRuleMapper
-from neutron.neutron_api_mappers import SubnetMapper
-from neutron.neutron_api_mappers import to_rest_timestamp
+from neutron.mappers.networks import NetworkMapper
+from neutron.mappers.ports import PortMapper
+from neutron.mappers.security_groups import SecurityGroupMapper
+from neutron.mappers.security_groups import SecurityGroupRuleMapper
+from neutron.mappers.subnets import SubnetMapper
+from neutron.mappers.base import to_rest_timestamp
 
 TABLES = [['table0', ['column0', 'column1']]]
 REMOTE = 'address://url'

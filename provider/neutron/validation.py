@@ -25,10 +25,10 @@ from handlers.base_handler import ConflictError
 from handlers.base_handler import BadRequestError
 from handlers.base_handler import ElementNotFoundError
 
-from neutron.neutron_api_mappers import PortMapper
-from neutron.neutron_api_mappers import SubnetMapper
-from neutron.neutron_api_mappers import RestDataError
-from neutron.neutron_api_mappers import RouterMapper
+from neutron.mappers.ports import PortMapper
+from neutron.mappers.subnets import SubnetMapper
+from neutron.mappers.base import RestDataError
+from neutron.mappers.routers import RouterMapper
 
 
 def attach_network_to_router_by_subnet(subnet, network_id, router_id):

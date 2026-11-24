@@ -27,19 +27,19 @@ import constants as ovnconst
 from handlers.base_handler import BadRequestError
 from handlers.base_handler import ConflictError
 import neutron.constants as neutron_constants
-from neutron.neutron_api_mappers import InvalidRestData
-from neutron.neutron_api_mappers import MandatoryDataMissing
-from neutron.neutron_api_mappers import Network
-from neutron.neutron_api_mappers import NetworkMapper
-from neutron.neutron_api_mappers import NetworkPort
-from neutron.neutron_api_mappers import PortMapper
-from neutron.neutron_api_mappers import SecurityGroup
-from neutron.neutron_api_mappers import SecurityGroupRule
-from neutron.neutron_api_mappers import SecurityGroupMapper
-from neutron.neutron_api_mappers import SecurityGroupRuleMapper
-from neutron.neutron_api_mappers import SubnetConfigError
-from neutron.neutron_api_mappers import SubnetMapper
-from neutron.neutron_api_mappers import UnsupportedDataValueError
+from neutron.mappers.base import InvalidRestData
+from neutron.mappers.base import MandatoryDataMissing
+from neutron.mappers.networks import Network
+from neutron.mappers.networks import NetworkMapper
+from neutron.mappers.ports import NetworkPort
+from neutron.mappers.ports import PortMapper
+from neutron.mappers.security_groups import SecurityGroup
+from neutron.mappers.security_groups import SecurityGroupRule
+from neutron.mappers.security_groups import SecurityGroupMapper
+from neutron.mappers.security_groups import SecurityGroupRuleMapper
+from neutron.mappers.subnets import SubnetConfigError
+from neutron.mappers.subnets import SubnetMapper
+from neutron.mappers.base import UnsupportedDataValueError
 from neutron.neutron_api import NeutronApi
 from ovirt_provider_config_common import dhcp_lease_time
 from ovirt_provider_config_common import dhcp_mtu
@@ -748,7 +748,7 @@ class TestOvnNorth(object):
     @mock.patch(
         'ovsdbapp.backend.ovs_idl.command.DbSetCommand', autospec=False
     )
-    @mock.patch('neutron.neutron_api.ovs_version_29', lambda: True)
+    @mock.patch('neutron.api.ports.ovs_version_29', lambda: True)
     def test_add_port(self, mock_db_set, mock_add_command, mock_connection):
         mock_add_command.return_value.execute.return_value = (
             TestOvnNorth.PORT_1
@@ -880,7 +880,7 @@ class TestOvnNorth(object):
     @mock.patch(
         'ovsdbapp.backend.ovs_idl.command.DbSetCommand', autospec=False
     )
-    @mock.patch('neutron.neutron_api.ovs_version_29', lambda: True)
+    @mock.patch('neutron.api.ports.ovs_version_29', lambda: True)
     def test_add_port_subnet(
         self,
         mock_db_set,

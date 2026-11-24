@@ -26,14 +26,14 @@ import constants as ovnconst
 from handlers.base_handler import BadRequestError
 from handlers.base_handler import ConflictError
 from handlers.base_handler import ElementNotFoundError
-from neutron.neutron_api import FloatingIpTarget
+from neutron.api.floating_ips import FloatingIpTarget
 from neutron.neutron_api import NeutronApi
-from neutron.neutron_api_mappers import FloatingIP
-from neutron.neutron_api_mappers import FloatingipMapper
-from neutron.neutron_api_mappers import PortMapper
-from neutron.neutron_api_mappers import RestDataError
-from neutron.neutron_api_mappers import RouterMapper
-from neutron.neutron_api_mappers import SubnetMapper
+from neutron.mappers.floating_ips import FloatingIP
+from neutron.mappers.floating_ips import FloatingipMapper
+from neutron.mappers.ports import PortMapper
+from neutron.mappers.base import RestDataError
+from neutron.mappers.routers import RouterMapper
+from neutron.mappers.subnets import SubnetMapper
 
 Lsp = namedtuple(
     'Lsp',

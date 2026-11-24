@@ -26,10 +26,10 @@ import constants as ovnconst
 from handlers.base_handler import BadRequestError
 from handlers.base_handler import ConflictError
 from neutron.neutron_api import NeutronApi
-from neutron.neutron_api_mappers import FloatingipMapper
-from neutron.neutron_api_mappers import PortMapper
-from neutron.neutron_api_mappers import RestDataError
-from neutron.neutron_api_mappers import RouterMapper
+from neutron.mappers.floating_ips import FloatingipMapper
+from neutron.mappers.ports import PortMapper
+from neutron.mappers.base import RestDataError
+from neutron.mappers.routers import RouterMapper
 
 Lr = namedtuple('Lr', ['uuid', 'name', 'ports', 'nat', 'external_ids'])
 Lrp = namedtuple('Lrp', ['uuid', 'name', 'networks', 'gateway_chassis'])
@@ -164,7 +164,7 @@ class TestGatewayChassis(object):
         api.ovn_north.set_lrp_gateway_chassis.assert_not_called()
 
     @mock.patch(
-        'neutron.neutron_api.gateway_chassis', return_value=['ch1', 'ch2']
+        'neutron.api.routers.gateway_chassis', return_value=['ch1', 'ch2']
     )
     def test_configured_chassis_applied(self, mock_chassis):
         api = make_api()
@@ -176,7 +176,7 @@ class TestGatewayChassis(object):
             unbound.name, ['ch1', 'ch2']
         )
 
-    @mock.patch('neutron.neutron_api.gateway_chassis', return_value=[])
+    @mock.patch('neutron.api.routers.gateway_chassis', return_value=[])
     def test_no_chassis_configured(self, mock_chassis):
         api = make_api()
         api.ovn_north.get_lrp.return_value = GW_LRP._replace(
@@ -256,7 +256,7 @@ class TestRouterDependencies(object):
         api._validate_interface_not_used_by_floatingips(ROUTER_ID, interface)
 
 
-@mock.patch('neutron.neutron_api.gateway_chassis', return_value=[])
+@mock.patch('neutron.api.routers.gateway_chassis', return_value=[])
 def test_floatingip_needs_gateway_chassis(mock_chassis):
     api = make_api()
     vm_port = mock.Mock(
