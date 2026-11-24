@@ -62,6 +62,16 @@ def optionally_use_transactions(f):
     return inner
 
 
+def lsp_id_from_lrp_name(lrp_name):
+    for prefix in (
+        ovnconst.ROUTER_PORT_NAME_PREFIX,
+        ovnconst.LEGACY_ROUTER_PORT_NAME_PREFIX,
+    ):
+        if lrp_name.startswith(prefix):
+            return lrp_name[len(prefix) :]
+    return lrp_name
+
+
 class OvnNorth(object):
     def __init__(self, idl):
         self.idl = idl
@@ -167,8 +177,9 @@ class OvnNorth(object):
                 raise ValueError('Not an ovirt controller port')
             return lsp
         if lrp:
-            lsp_id = lrp.name[len(ovnconst.ROUTER_PORT_NAME_PREFIX) :]
-            return ovn_connection.execute(self.idl.lsp_get(lsp_id))
+            return ovn_connection.execute(
+                self.idl.lsp_get(lsp_id_from_lrp_name(lrp.name))
+            )
 
     @accepts_single_arg
     def get_lrp(self, lrp_name=None, lsp_id=None):
@@ -551,3 +562,60 @@ class OvnNorth(object):
             ),
             None,
         )
+
+    # NAT
+
+    @optionally_use_transactions
+    def add_nat(
+        self,
+        lr_id,
+        nat_type,
+        external_ip,
+        logical_ip,
+        logical_port=None,
+        external_mac=None,
+        transaction=None,
+    ):
+        return self.idl.lr_nat_add(
+            lr_id,
+            nat_type,
+            external_ip,
+            logical_ip,
+            logical_port=logical_port,
+            external_mac=external_mac,
+            may_exist=False,
+        )
+
+    @optionally_use_transactions
+    def remove_nat(self, lr_id, nat_type, match_ip, transaction=None):
+        """
+        Remove a NAT entry from a router. For dnat and dnat_and_snat
+        entries match_ip is the external ip, for snat - the logical ip.
+        """
+        return self.idl.lr_nat_del(
+            lr_id, nat_type=nat_type, match_ip=match_ip, if_exists=True
+        )
+
+    def list_nat(self, lr_id):
+        return ovn_connection.execute(self.idl.lr_nat_list(lr_id))
+
+    @staticmethod
+    def lrp_has_gateway_chassis(lrp):
+        return bool(getattr(lrp, 'gateway_chassis', None)) or bool(
+            getattr(lrp, 'ha_chassis_group', None)
+        )
+
+    def set_lrp_gateway_chassis(self, lrp_name, chassis_names):
+        """
+        Bind the router port to the given chassis, the first one having the
+        highest priority. This turns it into a distributed gateway port,
+        which OVN requires for NAT.
+        """
+        priority = len(chassis_names)
+        for chassis in chassis_names:
+            ovn_connection.execute(
+                self.idl.lrp_set_gateway_chassis(
+                    lrp_name, chassis, priority=priority
+                )
+            )
+            priority -= 1

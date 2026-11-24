@@ -384,6 +384,7 @@ class TestNeutronResponse(object):
             'b930d7f6-ceb7-40a0-8b81-a425dd994ccf',
             '172.24.4.6',
             None,
+            enable_snat=False,
         )
 
     def test_get_extensions(self):

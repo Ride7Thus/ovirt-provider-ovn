@@ -33,6 +33,7 @@ from ovirt_provider_config import DEFAULT_DHCP_MTU
 from ovirt_provider_config import DEFAULT_DHCP_DEFAULT_IPV6_ADDRESS_MODE
 from ovirt_provider_config import DEFAULT_DHCP_SERVER_MAC
 from ovirt_provider_config import DEFAULT_KEYSTONE_PORT
+from ovirt_provider_config import DEFAULT_NETWORK_GATEWAY_CHASSIS
 from ovirt_provider_config import DEFAULT_NETWORK_PORT_SECURITY_ENABLED
 from ovirt_provider_config import DEFAULT_NEUTRON_PORT
 from ovirt_provider_config import DEFAULT_NOVA_PORT
@@ -60,6 +61,7 @@ from ovirt_provider_config import KEY_DHCP_MTU
 from ovirt_provider_config import KEY_DHCP_SERVER_MAC
 from ovirt_provider_config import KEY_HTTPS_ENABLED
 from ovirt_provider_config import KEY_KEYSTONE_PORT
+from ovirt_provider_config import KEY_NETWORK_GATEWAY_CHASSIS
 from ovirt_provider_config import KEY_NETWORK_PORT_SECURITY_ENABLED
 from ovirt_provider_config import KEY_NEUTRON_PORT
 from ovirt_provider_config import KEY_NOVA_PORT
@@ -303,6 +305,15 @@ def default_port_security_enabled():
         KEY_NETWORK_PORT_SECURITY_ENABLED,
         DEFAULT_NETWORK_PORT_SECURITY_ENABLED,
     )
+
+
+def gateway_chassis():
+    value = ovirt_provider_config.get(
+        CONFIG_SECTION_NETWORK,
+        KEY_NETWORK_GATEWAY_CHASSIS,
+        DEFAULT_NETWORK_GATEWAY_CHASSIS,
+    )
+    return [chassis.strip() for chassis in value.split(',') if chassis.strip()]
 
 
 def url_filter_exception():

@@ -2118,3 +2118,11 @@ class TestOvnNorth(object):
             'to a port on subnet 00000000-0000-0000-0000-000000000006 as the '
             'subnet is configured for automatic addresses'
         )
+
+
+def test_lsp_id_from_lrp_name_supports_both_prefixes():
+    from ovndb.ovn_north import lsp_id_from_lrp_name
+
+    lsp_id = '6f8c2e7e-2d3c-4a4e-9f0e-1b7a3a9c5d11'
+    assert lsp_id_from_lrp_name('lrp-' + lsp_id) == lsp_id
+    assert lsp_id_from_lrp_name('lrp' + lsp_id) == lsp_id

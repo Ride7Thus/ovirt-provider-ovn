@@ -876,6 +876,7 @@ class RouterMapper(Mapper):
     REST_ROUTER_NEXTHOP = 'nexthop'
 
     OVN_ROUTER_GATEWAY_PORT = 'ovirt_gateway_port'
+    OVN_ROUTER_ENABLE_SNAT = 'ovirt_enable_snat'
 
     ROUTER_STATUS_ACTIVE = 'ACTIVE'
     ROUTER_STATUS_INACTIVE = 'INACTIVE'
@@ -889,6 +890,7 @@ class RouterMapper(Mapper):
         network, subnet, ip = RouterMapper._get_external_gateway_from_rest(
             rest_data
         )
+        enable_snat = RouterMapper._get_enable_snat_from_rest(rest_data)
 
         if router_id:
             return func(
@@ -900,6 +902,7 @@ class RouterMapper(Mapper):
                 gateway_subnet=subnet,
                 gateway_ip=ip,
                 routes=routes,
+                enable_snat=enable_snat,
             )
         else:
             return func(
@@ -910,7 +913,30 @@ class RouterMapper(Mapper):
                 gateway_subnet=subnet,
                 gateway_ip=ip,
                 routes=routes,
+                enable_snat=enable_snat,
             )
+
+    @staticmethod
+    def _get_enable_snat_from_rest(rest_data):
+        """
+        As in neutron, SNAT defaults to enabled when an external gateway is
+        given. None means the request does not touch the external gateway.
+        """
+        gateway_info = rest_data.get(
+            RouterMapper.REST_ROUTER_EXTERNAL_GATEWAY_INFO
+        )
+        if not gateway_info:
+            return None
+        return bool(
+            gateway_info.get(RouterMapper.REST_ROUTER_ENABLE_SNAT, True)
+        )
+
+    @staticmethod
+    def is_snat_enabled(lr):
+        return (
+            lr.external_ids.get(RouterMapper.OVN_ROUTER_ENABLE_SNAT, 'false')
+            == 'true'
+        )
 
     @staticmethod
     def _get_external_gateway_from_rest(rest_data):
@@ -969,7 +995,9 @@ class RouterMapper(Mapper):
             return None
         return {
             RouterMapper.REST_ROUTER_NETWORK_ID: router.ext_gw_ls_id,
-            RouterMapper.REST_ROUTER_ENABLE_SNAT: False,
+            RouterMapper.REST_ROUTER_ENABLE_SNAT: RouterMapper.is_snat_enabled(
+                router.lr
+            ),
             RouterMapper.REST_ROUTER_FIXED_IPS: [
                 {
                     RouterMapper.REST_ROUTER_SUBNET_ID: router.ext_gw_dhcp_options_id,  # noqa: E501
@@ -1019,9 +1047,9 @@ class RouterMapper(Mapper):
             enable_snat = gateway_info.get(
                 RouterMapper.REST_ROUTER_ENABLE_SNAT, True
             )
-            if enable_snat:
-                raise NotImplementedError(
-                    '{key} must set be false'.format(
+            if not isinstance(enable_snat, bool):
+                raise RestDataError(
+                    '{key} must be a boolean'.format(
                         key=RouterMapper.REST_ROUTER_ENABLE_SNAT
                     )
                 )
