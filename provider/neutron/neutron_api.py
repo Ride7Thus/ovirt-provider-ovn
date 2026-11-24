@@ -470,7 +470,8 @@ class NeutronApi(object):
     ):
         port = self.ovn_north.get_lsp(ovirt_lsp_id=port_id)
         network_id = self._get_validated_port_network_id(port, network_id)
-        mac = mac or ip_utils.get_port_mac(port)
+        current_mac = ip_utils.get_port_mac(port)
+        mac = mac or current_mac
         with self.tx_manager.transaction() as tx:
             self._update_port_values(
                 port.uuid,
@@ -481,15 +482,18 @@ class NeutronApi(object):
                 binding_host,
                 transaction=tx,
             )
-            tx.add(
-                self.get_update_port_addr_command(
-                    port.name,
-                    network_id=network_id,
-                    mac=mac,
-                    fixed_ips=fixed_ips,
-                    port_type=port.type,
-                ).build_command()
-            )
+            # Rewriting the addresses without fixed_ips would turn a static
+            # address into a dynamic one, so only do it when they change.
+            if fixed_ips is not None or mac != current_mac:
+                tx.add(
+                    self.get_update_port_addr_command(
+                        port.name,
+                        network_id=network_id,
+                        mac=mac,
+                        fixed_ips=fixed_ips,
+                        port_type=port.type,
+                    ).build_command()
+                )
             self.update_port_security(
                 tx, port.name, mac, port_security, lsp=port
             )
