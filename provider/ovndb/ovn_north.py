@@ -29,10 +29,10 @@ from handlers.base_handler import ElementNotFoundError
 
 import neutron.validation as validate
 from neutron.ip import get_mask_from_subnet
-from neutron.neutron_api_mappers import PortMapper
-from neutron.neutron_api_mappers import SecurityGroupMapper
-from neutron.neutron_api_mappers import SecurityGroupRuleMapper
-from neutron.neutron_api_mappers import SubnetMapper
+from neutron.mappers.ports import PortMapper
+from neutron.mappers.security_groups import SecurityGroupMapper
+from neutron.mappers.security_groups import SecurityGroupRuleMapper
+from neutron.mappers.subnets import SubnetMapper
 
 from ovndb.db_set_command import DbSetCommand
 from ovndb.ovn_security_groups import OvnSecurityGroupApi
@@ -60,6 +60,16 @@ def optionally_use_transactions(f):
             return ovn_connection.execute(command)
 
     return inner
+
+
+def lsp_id_from_lrp_name(lrp_name):
+    for prefix in (
+        ovnconst.ROUTER_PORT_NAME_PREFIX,
+        ovnconst.LEGACY_ROUTER_PORT_NAME_PREFIX,
+    ):
+        if lrp_name.startswith(prefix):
+            return lrp_name[len(prefix) :]
+    return lrp_name
 
 
 class OvnNorth(object):
@@ -167,8 +177,9 @@ class OvnNorth(object):
                 raise ValueError('Not an ovirt controller port')
             return lsp
         if lrp:
-            lsp_id = lrp.name[len(ovnconst.ROUTER_PORT_NAME_PREFIX) :]
-            return ovn_connection.execute(self.idl.lsp_get(lsp_id))
+            return ovn_connection.execute(
+                self.idl.lsp_get(lsp_id_from_lrp_name(lrp.name))
+            )
 
     @accepts_single_arg
     def get_lrp(self, lrp_name=None, lsp_id=None):
@@ -290,9 +301,7 @@ class OvnNorth(object):
             )
         except RowNotFound:
             raise ElementNotFoundError(
-                'Security Group {sec_group_id} does not exist'.format(
-                    sec_group_id=security_group_id
-                )
+                f'Security Group {security_group_id} does not exist'
             )
 
     def add_security_group(
@@ -553,3 +562,72 @@ class OvnNorth(object):
             ),
             None,
         )
+
+    # Floating IPs / NAT
+
+    @optionally_use_transactions
+    def add_floatingip(
+        self, port_id, network_id, addresses, external_ids, transaction=None
+    ):
+        return self.idl.lsp_add(
+            network_id,
+            port_id,
+            may_exist=False,
+            addresses=addresses,
+            external_ids=dict(external_ids),
+        )
+
+    @optionally_use_transactions
+    def add_nat(
+        self,
+        lr_id,
+        nat_type,
+        external_ip,
+        logical_ip,
+        logical_port=None,
+        external_mac=None,
+        transaction=None,
+    ):
+        return self.idl.lr_nat_add(
+            lr_id,
+            nat_type,
+            external_ip,
+            logical_ip,
+            logical_port=logical_port,
+            external_mac=external_mac,
+            may_exist=False,
+        )
+
+    @optionally_use_transactions
+    def remove_nat(self, lr_id, nat_type, match_ip, transaction=None):
+        """
+        Remove a NAT entry from a router. For dnat and dnat_and_snat
+        entries match_ip is the external ip, for snat - the logical ip.
+        """
+        return self.idl.lr_nat_del(
+            lr_id, nat_type=nat_type, match_ip=match_ip, if_exists=True
+        )
+
+    def list_nat(self, lr_id):
+        return ovn_connection.execute(self.idl.lr_nat_list(lr_id))
+
+    @staticmethod
+    def lrp_has_gateway_chassis(lrp):
+        return bool(getattr(lrp, 'gateway_chassis', None)) or bool(
+            getattr(lrp, 'ha_chassis_group', None)
+        )
+
+    def set_lrp_gateway_chassis(self, lrp_name, chassis_names):
+        """
+        Bind the router port to the given chassis, the first one having the
+        highest priority. This turns it into a distributed gateway port,
+        which OVN requires for NAT.
+        """
+        priority = len(chassis_names)
+        for chassis in chassis_names:
+            ovn_connection.execute(
+                self.idl.lrp_set_gateway_chassis(
+                    lrp_name, chassis, priority=priority
+                )
+            )
+            priority -= 1

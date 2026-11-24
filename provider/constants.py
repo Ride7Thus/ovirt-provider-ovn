@@ -66,7 +66,10 @@ LOCALNET_SWITCH_PORT_NAME = 'localnet_port'
 ROUTER_SWITCH_PORT_NAME = 'router_port'
 UNASSIGNED_SWTICH_PORT_NAME = 'unassgined_port'
 
-ROUTER_PORT_NAME_PREFIX = 'lrp'
+# 'lrp-' is what ovn-bgp-agent expects. Router ports created by older
+# versions are named with the legacy 'lrp' prefix and are still recognized.
+ROUTER_PORT_NAME_PREFIX = 'lrp-'
+LEGACY_ROUTER_PORT_NAME_PREFIX = 'lrp'
 
 TABLE_ROUTES = 'Logical_Router_Static_Route'
 ROW_ROUTES_IP_PREFIX = 'ip_prefix'
@@ -86,3 +89,10 @@ TABLE_ADDRESS_SET = 'Address_Set'
 # Extensions
 EXTENSION_UPDATED = '2022-02-28T00:00:00-00:00'
 SUPPORTED_EXTENSIONS = [('Neutron Extra Route', 'extraroute')]
+
+NAT_SNAT = 'snat'
+NAT_DNAT = 'dnat'
+NAT_BOTH = 'dnat_and_snat'
+NAT_TYPES = (NAT_SNAT, NAT_DNAT, NAT_BOTH)
+
+FLOATING_IP_MAX_DESCRIPTION_LEN = 64

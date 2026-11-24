@@ -100,6 +100,10 @@ DEFAULT_AUTH_TOKEN_TIMEOUT = 360000
 CONFIG_SECTION_NETWORK = 'NETWORK'
 KEY_NETWORK_PORT_SECURITY_ENABLED = 'port-security-enabled-default'
 DEFAULT_NETWORK_PORT_SECURITY_ENABLED = False
+# Comma separated OVN chassis names hosting the routers' external gateway
+# ports, the first one having the highest priority.
+KEY_NETWORK_GATEWAY_CHASSIS = 'ovn-gateway-chassis'
+DEFAULT_NETWORK_GATEWAY_CHASSIS = ''
 
 CONFIG_SECTION_OVIRT = 'OVIRT'
 KEY_OVIRT_HOST = 'ovirt-host'

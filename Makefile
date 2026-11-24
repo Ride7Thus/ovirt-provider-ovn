@@ -143,6 +143,9 @@ unittest:
 lint: version.py
 	tox -e pylint
 
+containertest:
+	automation/run_tests_in_container.sh $(TARGETS)
+
 integrationtest:
 	RUN_INTEG_TESTS="defined" \
 	TEST_TARGET="integration-tests" \

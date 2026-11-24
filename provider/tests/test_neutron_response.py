@@ -27,36 +27,36 @@ import pytest
 from handlers.base_handler import BadRequestError
 from handlers.base_handler import ElementNotFoundError
 from handlers.neutron_responses import responses
-from handlers.neutron_responses import GET
-from handlers.neutron_responses import DELETE
-from handlers.neutron_responses import POST
-from handlers.neutron_responses import PUT
+from handlers.base_handler import GET
+from handlers.base_handler import DELETE
+from handlers.base_handler import POST
+from handlers.base_handler import PUT
 
-from handlers.neutron_responses import ALIAS
-from handlers.neutron_responses import NETWORK_ID
-from handlers.neutron_responses import PORT_ID
+from handlers.neutron_routes.general import ALIAS
+from handlers.neutron_routes.networks import NETWORK_ID
+from handlers.neutron_routes.ports import PORT_ID
 
-from handlers.neutron_responses import ADD_ROUTER_INTERFACE
-from handlers.neutron_responses import DELETE_ROUTER_INTERFACE
-from handlers.neutron_responses import FLOATINGIPS
-from handlers.neutron_responses import NETWORK_ENTITY
-from handlers.neutron_responses import NETWORKS
-from handlers.neutron_responses import PORT_ENTITY
-from handlers.neutron_responses import PORTS
-from handlers.neutron_responses import ROUTER_ENTITY
-from handlers.neutron_responses import ROUTERS
-from handlers.neutron_responses import SECURITY_GROUPS
-from handlers.neutron_responses import SUBNET_ENTITY
-from handlers.neutron_responses import SUBNETS
-from handlers.neutron_responses import EXTENSIONS
-from handlers.neutron_responses import EXTENSION_ENTITY
+from handlers.neutron_routes.routers import ADD_ROUTER_INTERFACE
+from handlers.neutron_routes.routers import DELETE_ROUTER_INTERFACE
+from handlers.neutron_routes.floating_ips import FLOATINGIPS
+from handlers.neutron_routes.networks import NETWORK_ENTITY
+from handlers.neutron_routes.networks import NETWORKS
+from handlers.neutron_routes.ports import PORT_ENTITY
+from handlers.neutron_routes.ports import PORTS
+from handlers.neutron_routes.routers import ROUTER_ENTITY
+from handlers.neutron_routes.routers import ROUTERS
+from handlers.neutron_routes.security_groups import SECURITY_GROUPS
+from handlers.neutron_routes.subnets import SUBNET_ENTITY
+from handlers.neutron_routes.subnets import SUBNETS
+from handlers.neutron_routes.general import EXTENSIONS
+from handlers.neutron_routes.general import EXTENSION_ENTITY
 
 from handlers.selecting_handler import SelectingHandler
 
-from neutron.neutron_api_mappers import NetworkMapper
-from neutron.neutron_api_mappers import PortMapper
-from neutron.neutron_api_mappers import Router
-from neutron.neutron_api_mappers import RouterMapper
+from neutron.mappers.networks import NetworkMapper
+from neutron.mappers.ports import PortMapper
+from neutron.mappers.routers import Router
+from neutron.mappers.routers import RouterMapper
 from neutron.neutron_api import NeutronApi
 
 from ovntestlib import OvnRouterRow
@@ -384,6 +384,7 @@ class TestNeutronResponse(object):
             'b930d7f6-ceb7-40a0-8b81-a425dd994ccf',
             '172.24.4.6',
             None,
+            enable_snat=False,
         )
 
     def test_get_extensions(self):

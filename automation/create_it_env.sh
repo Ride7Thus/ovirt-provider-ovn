@@ -26,6 +26,9 @@ function container_exec {
 }
 
 function load_kernel_modules {
+  if [ -n "$SKIP_KERNEL_MODULES" ]; then
+    return
+  fi
   modprobe openvswitch
 }
 
@@ -50,10 +53,14 @@ function destroy_env {
 
 function start_provider_container {
   kernel_version="$(uname -r)"
+  modules_mount=""
+  if [ -d "/lib/modules/$kernel_version" ]; then
+    modules_mount="-v /lib/modules/$kernel_version:/lib/modules/$kernel_version:ro"
+  fi
   PROVIDER_ID="$(
     ${CONTAINER_CMD} run --privileged -d \
 	  -v $PROJECT_ROOT/:$CONTAINER_SRC_CODE_PATH \
-	  -v /lib/modules/$kernel_version:/lib/modules/$kernel_version:ro \
+	  $modules_mount \
 	  -p 9696:9696 -p 35357:35357 \
     $OVIRT_PROVIDER_OVN_IMG:$IMAGE_TAG
   )"
@@ -70,6 +77,33 @@ function start_controller_container {
   enable_ipv6 "$OVN_CONTROLLER_ID"
   OVN_CONTROLLER_IP="$(container_ip $OVN_CONTROLLER_ID)"
   container_exec "$OVN_CONTROLLER_ID" "OVN_SB_IP=$PROVIDER_IP ./boot-controller.sh"
+}
+
+function configure_gateway_chassis {
+  # Bind router gateways to the test controller, needed for SNAT and
+  # floating IPs.
+  OVN_GATEWAY_CHASSIS="$(
+    container_exec "$OVN_CONTROLLER_ID" \
+      "ovs-vsctl get Open_vSwitch . external_ids:system-id" | tr -d '"\r'
+  )"
+  container_exec "$PROVIDER_ID" "
+    printf '[NETWORK]\novn-gateway-chassis=%s\n' $OVN_GATEWAY_CHASSIS \
+      > /etc/ovirt-provider-ovn/conf.d/20-gateway-chassis.conf && \
+    systemctl restart ovirt-provider-ovn
+  "
+  wait_for_provider
+  export OVN_GATEWAY_CHASSIS
+}
+
+function wait_for_provider {
+  container_exec "$PROVIDER_ID" "
+    for i in \$(seq 60); do
+      python3 -c 'import socket; socket.create_connection((\"127.0.0.1\", 9696), 1)' \
+        2>/dev/null && exit 0
+      sleep 1
+    done
+    exit 1
+  "
 }
 
 function create_rpms {
@@ -118,7 +152,7 @@ function collect_provider_logs {
 }
 
 function collect_sys_info {
-    cp /etc/os-release $EXPORTED_ARTIFACTS_DIR
+    cp /etc/os-release $EXPORTED_ARTIFACTS_DIR || true
     uname -a > $EXPORTED_ARTIFACTS_DIR/kernel_info.txt
 }
 
@@ -133,6 +167,7 @@ trap destroy_env EXIT
 load_kernel_modules
 start_provider_container
 start_controller_container
+configure_gateway_chassis
 if [ -n "$RUN_INTEG_TESTS" ]; then
   export PROVIDER_CONTAINER_ID=$PROVIDER_ID
   export CONTROLLER_CONTAINER_ID=$OVN_CONTROLLER_ID

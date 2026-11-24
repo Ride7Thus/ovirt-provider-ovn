@@ -107,33 +107,59 @@ def _get_ip_from_addresses(addresses):
 def _is_valid_ip(candidate):
     try:
         IPAddress(candidate)
-    except (AddrFormatError, TypeError):
+    except (AddrFormatError, TypeError, ValueError):
         return False
     return True
 
 
-def get_network_exclude_ips(network):
+def get_network_exclude_ranges(network):
+    """
+    Parse the logical switch 'exclude_ips' option into a list of
+    (first, last) IPAddress pairs. Single addresses yield first == last.
+    Malformed entries are skipped.
+    """
     exclude_values = network.other_config.get(
         ovnconst.LS_OPTION_EXCLUDE_IPS, ''
     )
-    # TODO: should we care about IP ranges? we do not use them, but
-    # what if someone else will?
-    # lets raise for now
-    result = []
+    ranges = []
     for exclude_value in exclude_values.split():
-        if ovnconst.LS_EXCLUDED_IP_DELIMITER in exclude_value:
-            raise NotImplementedError(
-                'Handling of ip ranges not yet implemented'
-            )
-        result.append(exclude_value)
-    return result
+        bounds = exclude_value.split(ovnconst.LS_EXCLUDED_IP_DELIMITER)
+        if len(bounds) > 2 or not all(_is_valid_ip(b) for b in bounds):
+            continue
+        first = IPAddress(bounds[0])
+        last = IPAddress(bounds[-1])
+        if first.version != last.version or first > last:
+            continue
+        ranges.append((first, last))
+    return ranges
+
+
+def is_ip_in_ranges(ip, ranges):
+    if not _is_valid_ip(ip):
+        return False
+    address = IPAddress(ip)
+    return any(
+        first.version == address.version and first <= address <= last
+        for first, last in ranges
+    )
+
+
+def is_ip_excluded(network, ip):
+    return is_ip_in_ranges(ip, get_network_exclude_ranges(network))
+
+
+def get_network_used_ips(network):
+    return {
+        address
+        for address in (get_port_ip(port) for port in network.ports)
+        if address is not None
+    }
 
 
 def is_ip_available_in_network(network, ip):
-    if any(ip == get_port_ip(port) for port in network.ports):
+    if ip in get_network_used_ips(network):
         return False
-    exclude_ips = get_network_exclude_ips(network)
-    return ip not in exclude_ips
+    return not is_ip_excluded(network, ip)
 
 
 def diff_routes(new_rest_routes, db_routes):

@@ -1,0 +1,8 @@
+tmp.repos
+exported-artifacts
+*.tar.gz
+.tox
+**/__pycache__
+**/*.pyc
+.venv
+venv

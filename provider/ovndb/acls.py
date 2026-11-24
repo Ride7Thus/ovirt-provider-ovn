@@ -22,9 +22,9 @@ import uuid
 
 import neutron.constants as neutron_constants
 
-from neutron.neutron_api_mappers import RestDataError
-from neutron.neutron_api_mappers import SecurityGroupMapper
-from neutron.neutron_api_mappers import SecurityGroupRuleMapper
+from neutron.mappers.base import RestDataError
+from neutron.mappers.security_groups import SecurityGroupMapper
+from neutron.mappers.security_groups import SecurityGroupRuleMapper
 
 
 class ProtocolNotSupported(RestDataError):
